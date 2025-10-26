@@ -1,0 +1,308 @@
+/* Расширенные анимации для максимального UX */
+
+/* Плавные переходы для всех интерактивных элементов */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Улучшенная анимация загрузки */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+}
+
+.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Анимация появления с эффектом bounce */
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(20px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Анимация для кнопок */
+@keyframes buttonPress {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.category-btn:active,
+.size-btn:active,
+.add-to-cart-btn:active {
+  animation: buttonPress 0.2s ease-out;
+}
+
+/* Плавное появление модального окна */
+@keyframes modalSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal.active .modal-content {
+  animation: modalSlideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Анимация для карточек товаров с 3D эффектом */
+@keyframes cardFloat {
+  0%,
+  100% {
+    transform: translateY(0) rotateX(0);
+  }
+  50% {
+    transform: translateY(-5px) rotateX(2deg);
+  }
+}
+
+.product-card:hover {
+  animation: cardFloat 0.6s ease-in-out;
+}
+
+/* Ripple эффект для кнопок */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-effect::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+}
+
+.ripple-effect:active::after {
+  animation: ripple 0.6s ease-out;
+}
+
+/* Анимация для индикаторов карусели */
+@keyframes indicatorPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.carousel-indicator.active {
+  animation: indicatorPulse 0.3s ease-out;
+}
+
+/* Плавное появление поисковых результатов */
+@keyframes dropDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-results.active {
+  animation: dropDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Анимация для toast уведомлений */
+@keyframes toastSlide {
+  0% {
+    transform: translateX(-50%) translateY(100px);
+    opacity: 0;
+  }
+  10% {
+    transform: translateX(-50%) translateY(-10px);
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) translateY(100px);
+    opacity: 0;
+  }
+}
+
+.toast {
+  animation: toastSlide 3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Skeleton loading анимация */
+@keyframes skeletonLoading {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 0%, var(--surface) 50%, var(--border) 100%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s ease-in-out infinite;
+}
+
+/* Hover эффект с тенью */
+@keyframes shadowGrow {
+  from {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+  to {
+    box-shadow: 0 12px 32px rgba(99, 102, 241, 0.2);
+  }
+}
+
+.product-card:hover {
+  animation: shadowGrow 0.3s ease-out forwards;
+}
+
+/* Анимация для фильтров */
+@keyframes filterSlide {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.filter-select {
+  animation: filterSlide 0.4s ease-out;
+}
+
+.filter-select:nth-child(1) {
+  animation-delay: 0.1s;
+}
+.filter-select:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+/* Плавное изменение цвета для активных элементов */
+@keyframes colorShift {
+  0%,
+  100% {
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(10deg);
+  }
+}
+
+.category-btn.active {
+  animation: colorShift 2s ease-in-out infinite;
+}
+
+/* Анимация для пустого состояния */
+@keyframes emptyFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.empty-icon {
+  animation: emptyFloat 3s ease-in-out infinite;
+}
+
+/* Улучшенная анимация для изображений */
+@keyframes imageZoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.1);
+  }
+}
+
+.product-card:hover .product-image {
+  animation: imageZoom 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Анимация для бейджей */
+@keyframes badgeBounce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.product-badge {
+  animation: badgeBounce 2s ease-in-out infinite;
+}
+
+/* Плавное появление элементов при скролле */
+@keyframes fadeInOnScroll {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.scroll-reveal {
+  animation: fadeInOnScroll 0.6s ease-out;
+}
