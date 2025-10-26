@@ -6,21 +6,35 @@ from typing import List, Optional
 import json
 from utils.error_handler import db_error_handler
 import logging
+import time
 
 logger = logging.getLogger(__name__)
-
+SessionLocal = None  # Assuming SessionLocal is defined somewhere in your codebase
 
 def transactional(func):
-    """Decorator to ensure database operations are atomic"""
+    """Decorator to ensure database operations are atomic with retry logic"""
     def wrapper(db: Session, *args, **kwargs):
-        try:
-            result = func(db, *args, **kwargs)
-            db.commit()
-            return result
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Transaction failed in {func.__name__}: {e}")
-            raise
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                result = func(db, *args, **kwargs)
+                db.commit()
+                return result
+            except Exception as e:
+                db.rollback()
+                
+                if attempt < max_retries - 1 and "connection" in str(e).lower():
+                    logger.warning(f"Transaction retry {attempt + 1}/{max_retries} for {func.__name__}: {e}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    db.close()
+                    db = SessionLocal()
+                    continue
+                    
+                logger.error(f"Transaction failed in {func.__name__}: {e}")
+                raise
     return wrapper
 
 
@@ -222,7 +236,7 @@ def add_to_cart(db: Session, user_id: int, product_id: int, quantity: int = 1, s
     
     if cart_item:
         new_quantity = cart_item.quantity + quantity
-        product = db.query(Product).filter(Product.id == product_id).first()
+        product = db.query(Product).filter(Product.id == product_id).with_for_update().first()
         if new_quantity > product.stock:
             raise ValueError("Insufficient stock")
         cart_item.quantity = new_quantity
