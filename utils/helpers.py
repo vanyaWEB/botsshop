@@ -4,6 +4,9 @@ from database.models import User
 from database.db import get_db
 from database import crud
 import config
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def check_subscription(bot: Bot, user_id: int) -> bool:
@@ -14,7 +17,8 @@ async def check_subscription(bot: Bot, user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(config.REQUIRED_CHANNEL_ID, user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to check subscription for user {user_id}: {e}")
         return False
 
 
@@ -23,7 +27,8 @@ async def is_subscribed(bot: Bot, user_id: int, channel_id: str) -> bool:
     try:
         member = await bot.get_chat_member(channel_id, user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to check subscription for user {user_id} in channel {channel_id}: {e}")
         return False
 
 
@@ -34,6 +39,8 @@ def is_admin(user_id: int) -> bool:
 
 def format_price(price: float) -> str:
     """Format price with currency"""
+    if not isinstance(price, (int, float)) or price < 0:
+        return "0.00₽"
     return f"{price:,.2f}₽".replace(',', ' ')
 
 
@@ -53,6 +60,9 @@ def get_status_text(status: str) -> str:
 
 def format_order_details(order) -> str:
     """Format order details for display"""
+    if not order or not order.items:
+        return "❌ Заказ пуст"
+    
     items_text = "\n".join([
         f"  • {item.product_name} {f'({item.size})' if item.size else ''} x{item.quantity} - {format_price(item.product_price * item.quantity)}"
         for item in order.items
@@ -82,6 +92,9 @@ def format_order_details(order) -> str:
 
 def format_product_details(product) -> str:
     """Format product details for display"""
+    if not product:
+        return "❌ Товар не найден"
+    
     text = f"""
 <b>{product.name}</b>
 
@@ -93,14 +106,21 @@ def format_product_details(product) -> str:
     
     if product.sizes:
         import json
-        sizes = json.loads(product.sizes)
-        text += f"\n<b>Размеры:</b> {', '.join(sizes)}"
+        try:
+            sizes = json.loads(product.sizes)
+            if sizes:
+                text += f"\n<b>Размеры:</b> {', '.join(sizes)}"
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse sizes for product {product.id}")
     
     return text.strip()
 
 
 async def get_or_create_user_from_telegram(telegram_user: TelegramUser) -> User:
     """Get or create user from Telegram user object"""
+    if not telegram_user or not telegram_user.id:
+        raise ValueError("Invalid telegram user")
+    
     with get_db() as db:
         user = crud.get_or_create_user(
             db,
@@ -114,5 +134,9 @@ async def get_or_create_user_from_telegram(telegram_user: TelegramUser) -> User:
 
 def get_user_theme(db, telegram_id: int) -> str:
     """Get user's theme preference"""
-    user = crud.get_user_by_telegram_id(db, telegram_id)
-    return user.theme if user and user.theme else 'light'
+    try:
+        user = crud.get_user_by_telegram_id(db, telegram_id)
+        return user.theme if user and user.theme else 'light'
+    except Exception as e:
+        logger.warning(f"Failed to get theme for user {telegram_id}: {e}")
+        return 'light'
