@@ -46,6 +46,11 @@ def catalog():
     """Catalog page"""
     return render_template('catalog.html')
 
+@app.route('/admin')
+def admin_panel():
+    """Admin panel page"""
+    return render_template('admin.html')
+
 @app.route('/api/categories')
 @limiter.limit("30 per minute")
 def get_categories():
@@ -146,6 +151,53 @@ def search_products():
             } for prod in products])
     except Exception as e:
         app.logger.error(f"Error searching products: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/admin/stats')
+@limiter.limit("10 per minute")
+def admin_stats():
+    """Get admin statistics"""
+    try:
+        with get_db() as db:
+            from database.models import Order, User, Product
+            
+            total_orders = db.query(Order).count()
+            total_revenue = db.query(Order).filter(Order.payment_status == 'succeeded').with_entities(
+                db.func.sum(Order.total_amount)
+            ).scalar() or 0
+            total_users = db.query(User).count()
+            total_products = db.query(Product).filter(Product.is_active == True).count()
+            
+            return jsonify({
+                'total_orders': total_orders,
+                'total_revenue': int(total_revenue),
+                'total_users': total_users,
+                'total_products': total_products
+            })
+    except Exception as e:
+        app.logger.error(f"Error fetching admin stats: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/admin/orders')
+@limiter.limit("10 per minute")
+def admin_orders():
+    """Get recent orders for admin"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        with get_db() as db:
+            from database.models import Order
+            
+            orders = db.query(Order).order_by(Order.created_at.desc()).limit(limit).all()
+            
+            return jsonify([{
+                'id': order.id,
+                'user_name': order.user.username if order.user else None,
+                'total_amount': order.total_amount,
+                'status': order.status,
+                'created_at': order.created_at.isoformat()
+            } for order in orders])
+    except Exception as e:
+        app.logger.error(f"Error fetching admin orders: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/health')
