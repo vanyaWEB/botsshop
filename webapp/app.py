@@ -51,6 +51,16 @@ def admin_panel():
     """Admin panel page"""
     return render_template('admin.html')
 
+@app.route('/admin/categories')
+def admin_categories():
+    """Admin categories management page"""
+    return render_template('admin_categories.html')
+
+@app.route('/admin/products')
+def admin_products():
+    """Admin products management page"""
+    return render_template('admin_products.html')
+
 @app.route('/api/categories')
 @limiter.limit("30 per minute")
 def get_categories():
@@ -152,6 +162,172 @@ def search_products():
     except Exception as e:
         app.logger.error(f"Error searching products: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/admin/categories', methods=['GET', 'POST'])
+@limiter.limit("30 per minute")
+def admin_categories_api():
+    """Get all categories or create new one"""
+    try:
+        if request.method == 'GET':
+            with get_db() as db:
+                categories = crud.get_all_categories(db)
+                return jsonify([{
+                    'id': cat.id,
+                    'name': cat.name,
+                    'description': cat.description,
+                    'icon': cat.icon,
+                    'position': cat.position,
+                    'is_active': cat.is_active,
+                    'product_count': len(cat.products)
+                } for cat in categories])
+        
+        elif request.method == 'POST':
+            data = request.json
+            with get_db() as db:
+                category = crud.create_category(
+                    db,
+                    name=data['name'],
+                    description=data.get('description'),
+                    icon=data.get('icon')
+                )
+                return jsonify({
+                    'id': category.id,
+                    'name': category.name,
+                    'description': category.description,
+                    'icon': category.icon,
+                    'position': category.position,
+                    'is_active': category.is_active
+                }), 201
+    except Exception as e:
+        app.logger.error(f"Error in admin categories API: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/categories/<int:category_id>', methods=['PUT', 'DELETE'])
+@limiter.limit("30 per minute")
+def admin_category_detail(category_id):
+    """Update or delete category"""
+    try:
+        with get_db() as db:
+            if request.method == 'PUT':
+                data = request.json
+                category = crud.update_category(db, category_id, **data)
+                if not category:
+                    return jsonify({'error': 'Category not found'}), 404
+                return jsonify({
+                    'id': category.id,
+                    'name': category.name,
+                    'description': category.description,
+                    'icon': category.icon,
+                    'position': category.position,
+                    'is_active': category.is_active
+                })
+            
+            elif request.method == 'DELETE':
+                success = crud.delete_category(db, category_id)
+                if not success:
+                    return jsonify({'error': 'Category not found'}), 404
+                return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error in admin category detail: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/products', methods=['GET', 'POST'])
+@limiter.limit("30 per minute")
+def admin_products_api():
+    """Get all products or create new one"""
+    try:
+        if request.method == 'GET':
+            category_id = request.args.get('category_id', type=int)
+            with get_db() as db:
+                products = crud.get_products(db, category_id=category_id, active_only=False)
+                return jsonify([{
+                    'id': prod.id,
+                    'name': prod.name,
+                    'description': prod.description,
+                    'price': prod.price,
+                    'stock': prod.stock,
+                    'brand': prod.brand,
+                    'sizes': prod.sizes,
+                    'size_stock': prod.size_stock,
+                    'photos': prod.photos.split(',') if prod.photos else [],
+                    'category_id': prod.category_id,
+                    'category_name': prod.category.name,
+                    'is_active': prod.is_active,
+                    'position': prod.position
+                } for prod in products])
+        
+        elif request.method == 'POST':
+            data = request.json
+            with get_db() as db:
+                product = crud.create_product(
+                    db,
+                    category_id=data['category_id'],
+                    name=data['name'],
+                    description=data.get('description', ''),
+                    price=float(data['price']),
+                    stock=int(data.get('stock', 0)),
+                    sizes=data.get('sizes'),
+                    photos=data.get('photos'),
+                    size_chart=data.get('size_chart')
+                )
+                # Update brand and size_stock if provided
+                if 'brand' in data:
+                    product.brand = data['brand']
+                if 'size_stock' in data:
+                    product.size_stock = data['size_stock']
+                db.commit()
+                db.refresh(product)
+                
+                return jsonify({
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'price': product.price,
+                    'stock': product.stock,
+                    'brand': product.brand,
+                    'sizes': product.sizes,
+                    'size_stock': product.size_stock,
+                    'photos': product.photos.split(',') if product.photos else [],
+                    'category_id': product.category_id,
+                    'is_active': product.is_active
+                }), 201
+    except Exception as e:
+        app.logger.error(f"Error in admin products API: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/products/<int:product_id>', methods=['PUT', 'DELETE'])
+@limiter.limit("30 per minute")
+def admin_product_detail(product_id):
+    """Update or delete product"""
+    try:
+        with get_db() as db:
+            if request.method == 'PUT':
+                data = request.json
+                product = crud.update_product(db, product_id, **data)
+                if not product:
+                    return jsonify({'error': 'Product not found'}), 404
+                return jsonify({
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'price': product.price,
+                    'stock': product.stock,
+                    'brand': product.brand,
+                    'sizes': product.sizes,
+                    'size_stock': product.size_stock,
+                    'photos': product.photos.split(',') if product.photos else [],
+                    'category_id': product.category_id,
+                    'is_active': product.is_active
+                })
+            
+            elif request.method == 'DELETE':
+                success = crud.delete_product(db, product_id)
+                if not success:
+                    return jsonify({'error': 'Product not found'}), 404
+                return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error in admin product detail: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/stats')
 @limiter.limit("10 per minute")
