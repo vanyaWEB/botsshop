@@ -1002,7 +1002,7 @@
                     <div class="product-description">${product.description}</div>
                     <div class="product-footer">
                         <div class="product-price">${product.price} ₽</div>
-                        <div class="product-stock ${product.stock === 0 ? 'out' : ''}">${product.stock > 0 ? `✓ ${product.stock} шт` : '✗ Нет'}</div>
+                        <div class="product-stock ${product.stock === 0 ? 'out' : ''}">${product.stock > 0 ? `В наличии: ${product.stock}` : 'Нет в наличии'}</div>
                     </div>
                 </div>
             </div>
@@ -1017,6 +1017,7 @@
 
             if (categories.length === 0) {
                 container.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p class="empty-text">Категории отсутствуют</p></div>';
+                document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p class="empty-text">Товары отсутствуют</p></div>';
                 return;
             }
 
@@ -1034,6 +1035,7 @@
         } catch (error) {
             console.error('[v0] Error loading categories:', error);
             document.getElementById('categories').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки категорий</p></div>';
+            document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки товаров</p></div>';
         }
     }
 
@@ -1057,10 +1059,16 @@
 
             const response = await fetch(`/api/products?category_id=${categoryId}`);
             products = await response.json();
+            
+            if (products.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p class="empty-text">В этой категории пока нет товаров</p></div>';
+                return;
+            }
+            
             applyFilters();
         } catch (error) {
             console.error('[v0] Error loading products:', error);
-            showToast('Ошибка загрузки товаров', 'error');
+            document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки товаров</p></div>';
         }
     }
 
