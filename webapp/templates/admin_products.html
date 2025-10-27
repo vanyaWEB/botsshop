@@ -1,0 +1,545 @@
+{% extends "base.html" %}
+
+{% block title %}Управление товарами{% endblock %}
+
+{% block styles %}
+<style>
+    .admin-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    .admin-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .admin-title {
+        font-size: 2rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .filters {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .filter-select {
+        padding: 0.75rem 1rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        font-size: 0.95rem;
+        min-width: 200px;
+    }
+
+    .products-table {
+        background: white;
+        border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        background: #f9fafb;
+        padding: 1rem;
+        text-align: left;
+        font-weight: 700;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    td {
+        padding: 1rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    tr:hover {
+        background: #f9fafb;
+    }
+
+    .product-image {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 0.5rem;
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.75rem;
+        border: none;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-size: 0.95rem;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-secondary {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .btn-secondary:hover {
+        background: #e5e7eb;
+    }
+
+    .btn-danger {
+        background: #ef4444;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #dc2626;
+    }
+
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 1.5rem;
+        padding: 2rem;
+        max-width: 600px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .modal-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin-bottom: 1.5rem;
+        color: #111827;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: #374151;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        font-size: 1rem;
+        transition: all 0.3s;
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .form-textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+    }
+
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .status-active {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .status-inactive {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .size-stock-inputs {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 1rem;
+    }
+
+    .size-stock-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6b7280;
+    }
+
+    @media (max-width: 768px) {
+        .products-table {
+            overflow-x: auto;
+        }
+
+        table {
+            min-width: 800px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <div>
+            <h1 class="admin-title">Управление товарами</h1>
+            <p style="color: #6b7280;">Создавайте и редактируйте товары</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">+ Создать товар</button>
+    </div>
+
+    <div class="filters">
+        <select id="categoryFilter" class="filter-select" onchange="filterProducts()">
+            <option value="">Все категории</option>
+        </select>
+        <select id="statusFilter" class="filter-select" onchange="filterProducts()">
+            <option value="">Все статусы</option>
+            <option value="active">Активные</option>
+            <option value="inactive">Неактивные</option>
+        </select>
+    </div>
+
+    <div class="products-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Фото</th>
+                    <th>Название</th>
+                    <th>Категория</th>
+                    <th>Бренд</th>
+                    <th>Цена</th>
+                    <th>Наличие</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="productsTable">
+                <tr><td colspan="8" class="empty-state">Загрузка товаров...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div id="productModal" class="modal">
+    <div class="modal-content">
+        <h2 class="modal-title" id="modalTitle">Создать товар</h2>
+        <form id="productForm" onsubmit="saveProduct(event)">
+            <input type="hidden" id="productId">
+            
+            <div class="form-group">
+                <label class="form-label">Категория *</label>
+                <select id="productCategory" class="form-input" required>
+                    <option value="">Выберите категорию</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Название *</label>
+                <input type="text" id="productName" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Бренд</label>
+                <input type="text" id="productBrand" class="form-input">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Описание</label>
+                <textarea id="productDescription" class="form-input form-textarea"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Цена (₽) *</label>
+                <input type="number" id="productPrice" class="form-input" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Размеры (через запятую)</label>
+                <input type="text" id="productSizes" class="form-input" placeholder="S,M,L,XL">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Наличие по размерам (JSON)</label>
+                <textarea id="productSizeStock" class="form-input" placeholder='{"S": 10, "M": 15, "L": 5}'></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Общее количество</label>
+                <input type="number" id="productStock" class="form-input" value="0">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Фото (file_id через запятую)</label>
+                <textarea id="productPhotos" class="form-input" placeholder="file_id1,file_id2"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="productActive" checked>
+                    Активен
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let products = [];
+    let categories = [];
+
+    async function loadCategories() {
+        try {
+            const response = await fetch('/api/admin/categories');
+            categories = await response.json();
+            
+            const categoryFilter = document.getElementById('categoryFilter');
+            const productCategory = document.getElementById('productCategory');
+            
+            categories.forEach(cat => {
+                categoryFilter.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+                productCategory.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+            });
+        } catch (error) {
+            console.error('[v0] Error loading categories:', error);
+        }
+    }
+
+    async function loadProducts() {
+        try {
+            const response = await fetch('/api/admin/products');
+            products = await response.json();
+            renderProducts();
+        } catch (error) {
+            console.error('[v0] Error loading products:', error);
+            document.getElementById('productsTable').innerHTML = `
+                <tr><td colspan="8" class="empty-state">Ошибка загрузки товаров</td></tr>
+            `;
+        }
+    }
+
+    function filterProducts() {
+        const categoryId = document.getElementById('categoryFilter').value;
+        const status = document.getElementById('statusFilter').value;
+        
+        let filtered = products;
+        
+        if (categoryId) {
+            filtered = filtered.filter(p => p.category_id == categoryId);
+        }
+        
+        if (status === 'active') {
+            filtered = filtered.filter(p => p.is_active);
+        } else if (status === 'inactive') {
+            filtered = filtered.filter(p => !p.is_active);
+        }
+        
+        renderProducts(filtered);
+    }
+
+    function renderProducts(productsToRender = products) {
+        const tbody = document.getElementById('productsTable');
+        
+        if (productsToRender.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Товаров пока нет</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = productsToRender.map(prod => `
+            <tr>
+                <td>
+                    ${prod.photos && prod.photos.length > 0 
+                        ? `<img src="https://via.placeholder.com/60" class="product-image" alt="${prod.name}">` 
+                        : '<div style="width:60px;height:60px;background:#f3f4f6;border-radius:0.5rem;"></div>'}
+                </td>
+                <td><strong>${prod.name}</strong></td>
+                <td>${prod.category_name}</td>
+                <td>${prod.brand || '-'}</td>
+                <td>${prod.price}₽</td>
+                <td>${prod.stock}</td>
+                <td>
+                    <span class="status-badge ${prod.is_active ? 'status-active' : 'status-inactive'}">
+                        ${prod.is_active ? 'Активен' : 'Неактивен'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-secondary btn-sm" onclick="editProduct(${prod.id})">Редактировать</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteProduct(${prod.id})">Удалить</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function openCreateModal() {
+        if (categories.length === 0) {
+            alert('Сначала создайте хотя бы одну категорию!');
+            window.location.href = '/admin/categories';
+            return;
+        }
+
+        document.getElementById('modalTitle').textContent = 'Создать товар';
+        document.getElementById('productForm').reset();
+        document.getElementById('productId').value = '';
+        document.getElementById('productActive').checked = true;
+        document.getElementById('productModal').classList.add('active');
+    }
+
+    function editProduct(id) {
+        const product = products.find(p => p.id === id);
+        if (!product) return;
+
+        document.getElementById('modalTitle').textContent = 'Редактировать товар';
+        document.getElementById('productId').value = product.id;
+        document.getElementById('productCategory').value = product.category_id;
+        document.getElementById('productName').value = product.name;
+        document.getElementById('productBrand').value = product.brand || '';
+        document.getElementById('productDescription').value = product.description || '';
+        document.getElementById('productPrice').value = product.price;
+        document.getElementById('productSizes').value = product.sizes || '';
+        document.getElementById('productSizeStock').value = product.size_stock || '';
+        document.getElementById('productStock').value = product.stock;
+        document.getElementById('productPhotos').value = product.photos ? product.photos.join(',') : '';
+        document.getElementById('productActive').checked = product.is_active;
+        document.getElementById('productModal').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('productModal').classList.remove('active');
+    }
+
+    async function saveProduct(event) {
+        event.preventDefault();
+
+        const id = document.getElementById('productId').value;
+        const data = {
+            category_id: parseInt(document.getElementById('productCategory').value),
+            name: document.getElementById('productName').value,
+            brand: document.getElementById('productBrand').value,
+            description: document.getElementById('productDescription').value,
+            price: parseFloat(document.getElementById('productPrice').value),
+            sizes: document.getElementById('productSizes').value,
+            size_stock: document.getElementById('productSizeStock').value,
+            stock: parseInt(document.getElementById('productStock').value),
+            photos: document.getElementById('productPhotos').value,
+            is_active: document.getElementById('productActive').checked
+        };
+
+        try {
+            const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
+            const method = id ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) throw new Error('Failed to save product');
+
+            closeModal();
+            await loadProducts();
+        } catch (error) {
+            console.error('[v0] Error saving product:', error);
+            alert('Ошибка при сохранении товара');
+        }
+    }
+
+    async function deleteProduct(id) {
+        if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/products/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to delete product');
+
+            await loadProducts();
+        } catch (error) {
+            console.error('[v0] Error deleting product:', error);
+            alert('Ошибка при удалении товара');
+        }
+    }
+
+    document.getElementById('productModal').addEventListener('click', (e) => {
+        if (e.target.id === 'productModal') {
+            closeModal();
+        }
+    });
+
+    loadCategories();
+    loadProducts();
+</script>
+{% endblock %}
