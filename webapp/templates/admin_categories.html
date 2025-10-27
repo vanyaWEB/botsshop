@@ -294,14 +294,19 @@
     async function loadCategories() {
         try {
             const response = await fetch('/api/admin/categories');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             categories = await response.json();
+            console.log('[v0] Loaded categories:', categories);
             renderCategories();
         } catch (error) {
             console.error('[v0] Error loading categories:', error);
             document.getElementById('categoriesContainer').innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">⚠️</div>
-                    <p>Ошибка загрузки категорий</p>
+                    <p>Ошибка загрузки категорий: ${error.message}</p>
+                    <button class="btn btn-primary" onclick="loadCategories()" style="margin-top: 1rem;">Попробовать снова</button>
                 </div>
             `;
         }
@@ -310,7 +315,7 @@
     function renderCategories() {
         const container = document.getElementById('categoriesContainer');
         
-        if (categories.length === 0) {
+        if (!Array.isArray(categories) || categories.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">📦</div>
@@ -333,8 +338,8 @@
                 </div>
                 <div class="category-description">${cat.description || 'Без описания'}</div>
                 <div class="category-stats">
-                    <span>Товаров: ${cat.product_count}</span>
-                    <span>Позиция: ${cat.position}</span>
+                    <span>Товаров: ${cat.product_count || 0}</span>
+                    <span>Позиция: ${cat.position || 0}</span>
                 </div>
                 <div class="category-actions">
                     <button class="btn btn-secondary btn-sm" onclick="editCategory(${cat.id})">Редактировать</button>
@@ -380,6 +385,8 @@
             is_active: document.getElementById('categoryActive').checked
         };
 
+        console.log('[v0] Saving category:', data);
+
         try {
             const url = id ? `/api/admin/categories/${id}` : '/api/admin/categories';
             const method = id ? 'PUT' : 'POST';
@@ -390,13 +397,21 @@
                 body: JSON.stringify(data)
             });
 
-            if (!response.ok) throw new Error('Failed to save category');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save category');
+            }
+
+            const result = await response.json();
+            console.log('[v0] Category saved:', result);
 
             closeModal();
             await loadCategories();
+            
+            alert(id ? 'Категория успешно обновлена!' : 'Категория успешно создана!');
         } catch (error) {
             console.error('[v0] Error saving category:', error);
-            alert('Ошибка при сохранении категории');
+            alert(`Ошибка при сохранении категории: ${error.message}`);
         }
     }
 
