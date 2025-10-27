@@ -105,11 +105,13 @@ async def toggle_theme_callback(callback: CallbackQuery):
         crud.update_user_theme(db, callback.from_user.id, new_theme)
         
         theme_name = "Темная" if new_theme == 'dark' else "Светлая"
-        await callback.answer(f"✅ Тема изменена на: {theme_name}")
         
-        await callback.message.edit_reply_markup(
+        await callback.message.answer(
+            f"Тема изменена на: {theme_name}\n\nВыберите действие:",
             reply_markup=get_main_menu_keyboard(is_admin(callback.from_user.id), new_theme)
         )
+        await callback.message.delete()
+        await callback.answer()
 
 
 @router.callback_query(F.data == "about")
