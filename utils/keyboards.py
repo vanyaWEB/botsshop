@@ -10,23 +10,21 @@ def get_main_menu_keyboard(is_admin: bool = False, theme: str = 'light') -> Inli
     """Main menu keyboard"""
     builder = InlineKeyboardBuilder()
     
-    colors = config.THEMES[theme]
-    
     builder.row(
-        InlineKeyboardButton(text="🛍 Каталог", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/catalog")),
+        InlineKeyboardButton(text="Каталог", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/catalog")),
     )
     builder.row(
-        InlineKeyboardButton(text="🛒 Корзина", callback_data="cart"),
-        InlineKeyboardButton(text="📦 Мои заказы", callback_data="my_orders")
+        InlineKeyboardButton(text="Корзина", callback_data="cart"),
+        InlineKeyboardButton(text="Мои заказы", callback_data="my_orders")
     )
     builder.row(
-        InlineKeyboardButton(text="ℹ️ О магазине", callback_data="about"),
-        InlineKeyboardButton(text="🎨 Тема", callback_data="toggle_theme")
+        InlineKeyboardButton(text="О магазине", callback_data="about"),
+        InlineKeyboardButton(text="Сменить тему", callback_data="toggle_theme")
     )
     
     if is_admin:
         builder.row(
-            InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")
+            InlineKeyboardButton(text="Админ-панель", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/admin"))
         )
     
     return builder.as_markup()
@@ -35,7 +33,7 @@ def get_main_menu_keyboard(is_admin: bool = False, theme: str = 'light') -> Inli
 def get_back_button(callback_data: str = "main_menu") -> InlineKeyboardMarkup:
     """Back button"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=callback_data))
+    builder.row(InlineKeyboardButton(text="Назад", callback_data=callback_data))
     return builder.as_markup()
 
 
@@ -44,15 +42,14 @@ def get_categories_keyboard(categories: List[Category]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for category in categories:
-        icon = category.icon or "📁"
         builder.row(
             InlineKeyboardButton(
-                text=f"{icon} {category.name}",
+                text=category.name,
                 callback_data=f"category_{category.id}"
             )
         )
     
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="Назад", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -92,18 +89,18 @@ def get_product_keyboard(product: Product, in_cart: bool = False) -> InlineKeybo
         else:
             builder.row(
                 InlineKeyboardButton(
-                    text="➕ Добавить в корзину",
+                    text="Добавить в корзину",
                     callback_data=f"add_to_cart_{product.id}_none"
                 )
             )
     else:
         builder.row(
-            InlineKeyboardButton(text="❌ Нет в наличии", callback_data="noop")
+            InlineKeyboardButton(text="Нет в наличии", callback_data="noop")
         )
     
     if product.size_chart:
         builder.row(
-            InlineKeyboardButton(text="📏 Размерная сетка", callback_data=f"size_chart_{product.id}")
+            InlineKeyboardButton(text="Размерная сетка", callback_data=f"size_chart_{product.id}")
         )
     
     builder.row(
@@ -140,10 +137,10 @@ def get_cart_keyboard(cart_items: List, total: float) -> InlineKeyboardMarkup:
             )
         
         builder.row(
-            InlineKeyboardButton(text=f"✅ Оформить заказ ({total}₽)", callback_data="checkout")
+            InlineKeyboardButton(text=f"Оформить заказ ({total}₽)", callback_data="checkout")
         )
         builder.row(
-            InlineKeyboardButton(text="🗑 Очистить корзину", callback_data="clear_cart")
+            InlineKeyboardButton(text="Очистить корзину", callback_data="clear_cart")
         )
     
     builder.row(
@@ -158,10 +155,10 @@ def get_checkout_keyboard(order_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="💳 Оплатить", callback_data=f"pay_order_{order_id}")
+        InlineKeyboardButton(text="Оплатить", callback_data=f"pay_order_{order_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="❌ Отменить заказ", callback_data=f"cancel_order_{order_id}")
+        InlineKeyboardButton(text="Отменить заказ", callback_data=f"cancel_order_{order_id}")
     )
     
     return builder.as_markup()
@@ -201,7 +198,7 @@ def get_order_detail_keyboard(order: Order) -> InlineKeyboardMarkup:
     
     if order.status == 'pending' and order.payment_status != 'succeeded':
         builder.row(
-            InlineKeyboardButton(text="💳 Оплатить", callback_data=f"pay_order_{order.id}")
+            InlineKeyboardButton(text="Оплатить", callback_data=f"pay_order_{order.id}")
         )
     
     builder.row(
@@ -213,23 +210,26 @@ def get_order_detail_keyboard(order: Order) -> InlineKeyboardMarkup:
 
 # Admin keyboards
 def get_admin_panel_keyboard(theme: str = 'light') -> InlineKeyboardMarkup:
-    """Admin panel main menu with modern design"""
+    """Admin panel main menu"""
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-        InlineKeyboardButton(text="📦 Заказы", callback_data="admin_orders")
+        InlineKeyboardButton(text="Статистика", callback_data="admin_stats"),
+        InlineKeyboardButton(text="Заказы", callback_data="admin_orders")
     )
     builder.row(
-        InlineKeyboardButton(text="📂 Категории", callback_data="admin_categories"),
-        InlineKeyboardButton(text="🛍 Товары", callback_data="admin_products")
+        InlineKeyboardButton(text="Категории", callback_data="admin_categories"),
+        InlineKeyboardButton(text="Товары", callback_data="admin_products")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users"),
-        InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")
+        InlineKeyboardButton(text="Пользователи", callback_data="admin_users"),
+        InlineKeyboardButton(text="Рассылка", callback_data="admin_broadcast")
     )
     builder.row(
-        InlineKeyboardButton(text="◀️ Главное меню", callback_data="main_menu")
+        InlineKeyboardButton(text="Веб-панель", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/admin"))
+    )
+    builder.row(
+        InlineKeyboardButton(text="Главное меню", callback_data="main_menu")
     )
     
     return builder.as_markup()
@@ -253,7 +253,7 @@ def get_admin_categories_keyboard(categories: List[Category], theme: str = 'ligh
         )
     
     builder.row(
-        InlineKeyboardButton(text="➕ Добавить категорию", callback_data="admin_add_category")
+        InlineKeyboardButton(text="Добавить категорию", callback_data="admin_add_category")
     )
     builder.row(
         InlineKeyboardButton(text="◀️ Админ-панель", callback_data="back_to_admin")
@@ -267,10 +267,10 @@ def get_admin_category_actions_keyboard(category_id: int, theme: str = 'light') 
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="✏️ Изменить название", callback_data=f"admin_edit_cat_{category_id}"),
+        InlineKeyboardButton(text="Изменить название", callback_data=f"admin_edit_cat_{category_id}"),
     )
     builder.row(
-        InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_del_cat_{category_id}")
+        InlineKeyboardButton(text="Удалить", callback_data=f"admin_del_cat_{category_id}")
     )
     builder.row(
         InlineKeyboardButton(text="◀️ Назад", callback_data="admin_categories")
@@ -304,19 +304,19 @@ def get_admin_product_actions_keyboard(product_id: int, theme: str = 'light') ->
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="✏️ Название", callback_data=f"admin_edit_prod_name_{product_id}"),
-        InlineKeyboardButton(text="📝 Описание", callback_data=f"admin_edit_prod_desc_{product_id}")
+        InlineKeyboardButton(text="Название", callback_data=f"admin_edit_prod_name_{product_id}"),
+        InlineKeyboardButton(text="Описание", callback_data=f"admin_edit_prod_desc_{product_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="💰 Цена", callback_data=f"admin_edit_prod_price_{product_id}"),
-        InlineKeyboardButton(text="📏 Размеры", callback_data=f"admin_edit_prod_sizes_{product_id}")
+        InlineKeyboardButton(text="Цена", callback_data=f"admin_edit_prod_price_{product_id}"),
+        InlineKeyboardButton(text="Размеры", callback_data=f"admin_edit_prod_sizes_{product_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="📦 Остаток", callback_data=f"admin_edit_prod_stock_{product_id}"),
-        InlineKeyboardButton(text="📸 Фото", callback_data=f"admin_edit_prod_photos_{product_id}")
+        InlineKeyboardButton(text="Остаток", callback_data=f"admin_edit_prod_stock_{product_id}"),
+        InlineKeyboardButton(text="Фото", callback_data=f"admin_edit_prod_photos_{product_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🗑 Удалить товар", callback_data=f"admin_del_prod_{product_id}")
+        InlineKeyboardButton(text="Удалить товар", callback_data=f"admin_del_prod_{product_id}")
     )
     builder.row(
         InlineKeyboardButton(text="◀️ Назад", callback_data="admin_products")
@@ -357,16 +357,16 @@ def get_admin_order_actions_keyboard(order_id: int, status: str, theme: str = 'l
     
     if status == 'pending':
         builder.row(
-            InlineKeyboardButton(text="🔄 В обработку", callback_data=f"admin_order_status_{order_id}_processing")
+            InlineKeyboardButton(text="В обработку", callback_data=f"admin_order_status_{order_id}_processing")
         )
     elif status == 'processing':
         builder.row(
-            InlineKeyboardButton(text="✅ Завершить", callback_data=f"admin_order_status_{order_id}_completed")
+            InlineKeyboardButton(text="Завершить", callback_data=f"admin_order_status_{order_id}_completed")
         )
     
     if status != 'cancelled':
         builder.row(
-            InlineKeyboardButton(text="❌ Отменить", callback_data=f"admin_order_status_{order_id}_cancelled")
+            InlineKeyboardButton(text="Отменить", callback_data=f"admin_order_status_{order_id}_cancelled")
         )
     
     builder.row(
@@ -401,7 +401,7 @@ def get_admin_user_actions_keyboard(user_id: int, is_active: bool, theme: str = 
     """Admin user actions"""
     builder = InlineKeyboardBuilder()
     
-    block_text = "🟢 Разблокировать" if not is_active else "🔴 Заблокировать"
+    block_text = "Разблокировать" if not is_active else "Заблокировать"
     builder.row(
         InlineKeyboardButton(text=block_text, callback_data=f"admin_block_user_{user_id}")
     )
@@ -417,7 +417,7 @@ def get_admin_stats_keyboard(theme: str = 'light') -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_stats")
+        InlineKeyboardButton(text="Обновить", callback_data="admin_stats")
     )
     builder.row(
         InlineKeyboardButton(text="◀️ Админ-панель", callback_data="back_to_admin")
@@ -440,8 +440,8 @@ def get_confirm_keyboard(action: str, item_id: int, theme: str = 'light') -> Inl
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_{action}_{item_id}"),
-        InlineKeyboardButton(text="❌ Нет", callback_data=f"cancel_{action}")
+        InlineKeyboardButton(text="Да", callback_data=f"confirm_{action}_{item_id}"),
+        InlineKeyboardButton(text="Нет", callback_data=f"cancel_{action}")
     )
     
     return builder.as_markup()
@@ -453,10 +453,10 @@ def get_subscription_keyboard() -> InlineKeyboardMarkup:
     
     if config.REQUIRED_CHANNEL_URL:
         builder.row(
-            InlineKeyboardButton(text="📢 Подписаться", url=config.REQUIRED_CHANNEL_URL)
+            InlineKeyboardButton(text="Подписаться", url=config.REQUIRED_CHANNEL_URL)
         )
     builder.row(
-        InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")
+        InlineKeyboardButton(text="Проверить подписку", callback_data="check_subscription")
     )
     
     return builder.as_markup()
