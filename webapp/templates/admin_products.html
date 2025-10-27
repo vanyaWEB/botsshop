@@ -361,29 +361,43 @@
     async function loadCategories() {
         try {
             const response = await fetch('/api/admin/categories');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             categories = await response.json();
+            console.log('[v0] Loaded categories:', categories);
             
             const categoryFilter = document.getElementById('categoryFilter');
             const productCategory = document.getElementById('productCategory');
             
-            categories.forEach(cat => {
-                categoryFilter.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
-                productCategory.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
-            });
+            categoryFilter.innerHTML = '<option value="">Все категории</option>';
+            productCategory.innerHTML = '<option value="">Выберите категорию</option>';
+            
+            if (Array.isArray(categories)) {
+                categories.forEach(cat => {
+                    categoryFilter.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+                    productCategory.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+                });
+            }
         } catch (error) {
             console.error('[v0] Error loading categories:', error);
+            alert(`Ошибка загрузки категорий: ${error.message}`);
         }
     }
 
     async function loadProducts() {
         try {
             const response = await fetch('/api/admin/products');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             products = await response.json();
+            console.log('[v0] Loaded products:', products);
             renderProducts();
         } catch (error) {
             console.error('[v0] Error loading products:', error);
             document.getElementById('productsTable').innerHTML = `
-                <tr><td colspan="8" class="empty-state">Ошибка загрузки товаров</td></tr>
+                <tr><td colspan="8" class="empty-state">Ошибка загрузки товаров: ${error.message}</td></tr>
             `;
         }
     }
@@ -410,23 +424,27 @@
     function renderProducts(productsToRender = products) {
         const tbody = document.getElementById('productsTable');
         
-        if (productsToRender.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Товаров пока нет</td></tr>`;
+        if (!Array.isArray(productsToRender) || productsToRender.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="empty-state">
+                <div style="padding: 2rem;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">📦</div>
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Товаров пока нет</div>
+                    <button class="btn btn-primary" onclick="openCreateModal()" style="margin-top: 1rem;">Создать первый товар</button>
+                </div>
+            </td></tr>`;
             return;
         }
 
         tbody.innerHTML = productsToRender.map(prod => `
             <tr>
                 <td>
-                    ${prod.photos && prod.photos.length > 0 
-                        ? `<img src="https://via.placeholder.com/60" class="product-image" alt="${prod.name}">` 
-                        : '<div style="width:60px;height:60px;background:#f3f4f6;border-radius:0.5rem;"></div>'}
+                    <div style="width:60px;height:60px;background:#f3f4f6;border-radius:0.5rem;display:flex;align-items:center;justify-content:center;font-size:2rem;">📦</div>
                 </td>
                 <td><strong>${prod.name}</strong></td>
-                <td>${prod.category_name}</td>
+                <td>${prod.category_name || '-'}</td>
                 <td>${prod.brand || '-'}</td>
                 <td>${prod.price}₽</td>
-                <td>${prod.stock}</td>
+                <td>${prod.stock || 0}</td>
                 <td>
                     <span class="status-badge ${prod.is_active ? 'status-active' : 'status-inactive'}">
                         ${prod.is_active ? 'Активен' : 'Неактивен'}
@@ -441,7 +459,7 @@
     }
 
     function openCreateModal() {
-        if (categories.length === 0) {
+        if (!Array.isArray(categories) || categories.length === 0) {
             alert('Сначала создайте хотя бы одну категорию!');
             window.location.href = '/admin/categories';
             return;
@@ -489,10 +507,12 @@
             price: parseFloat(document.getElementById('productPrice').value),
             sizes: document.getElementById('productSizes').value,
             size_stock: document.getElementById('productSizeStock').value,
-            stock: parseInt(document.getElementById('productStock').value),
+            stock: parseInt(document.getElementById('productStock').value) || 0,
             photos: document.getElementById('productPhotos').value,
             is_active: document.getElementById('productActive').checked
         };
+
+        console.log('[v0] Saving product:', data);
 
         try {
             const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
@@ -504,13 +524,21 @@
                 body: JSON.stringify(data)
             });
 
-            if (!response.ok) throw new Error('Failed to save product');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save product');
+            }
+
+            const result = await response.json();
+            console.log('[v0] Product saved:', result);
 
             closeModal();
             await loadProducts();
+            
+            alert(id ? 'Товар успешно обновлен!' : 'Товар успешно создан!');
         } catch (error) {
             console.error('[v0] Error saving product:', error);
-            alert('Ошибка при сохранении товара');
+            alert(`Ошибка при сохранении товара: ${error.message}`);
         }
     }
 
@@ -539,7 +567,9 @@
         }
     });
 
-    loadCategories();
-    loadProducts();
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories();
+        loadProducts();
+    });
 </script>
 {% endblock %}
