@@ -57,7 +57,9 @@ class Product(Base):
     price = Column(Float, nullable=False, index=True)
     photos = Column(Text)
     stock = Column(Integer, default=0, index=True)
+    brand = Column(String(255))
     sizes = Column(String(255))
+    size_stock = Column(Text)  # JSON: {"S": 10, "M": 15, "L": 5}
     size_chart = Column(Text)
     is_active = Column(Boolean, default=True, index=True)
     position = Column(Integer, default=0)
