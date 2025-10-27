@@ -495,6 +495,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        flex-shrink: 0;
         transition: all 0.3s;
         backdrop-filter: blur(10px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -911,6 +912,13 @@
     let currentImageIndex = 0;
     let searchTimeout = null;
 
+    const tg = window.Telegram?.WebApp || {
+        HapticFeedback: null,
+        sendData: (data) => console.log('[v0] Telegram data:', data)
+    };
+
+    if (tg.ready) tg.ready();
+
     document.getElementById('searchInput').addEventListener('input', (e) => {
         const query = e.target.value.trim();
         clearTimeout(searchTimeout);
@@ -1015,8 +1023,8 @@
             categories = await response.json();
             const container = document.getElementById('categories');
 
-            if (categories.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p class="empty-text">Категории отсутствуют</p></div>';
+            if (!categories || categories.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p class="empty-text">Категории отсутствуют. Администратор еще не добавил товары.</p></div>';
                 document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p class="empty-text">Товары отсутствуют</p></div>';
                 return;
             }
@@ -1034,7 +1042,7 @@
             }
         } catch (error) {
             console.error('[v0] Error loading categories:', error);
-            document.getElementById('categories').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки категорий</p></div>';
+            document.getElementById('categories').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки категорий. Попробуйте обновить страницу.</p></div>';
             document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки товаров</p></div>';
         }
     }
@@ -1055,20 +1063,20 @@
     async function loadProducts(categoryId) {
         try {
             const container = document.getElementById('products');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Загрузка товаров...</span></div>';
+            container.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p class="empty-text">Загрузка товаров...</p></div>';
 
             const response = await fetch(`/api/products?category_id=${categoryId}`);
             products = await response.json();
             
-            if (products.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p class="empty-text">В этой категории пока нет товаров</p></div>';
+            if (!products || products.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p class="empty-text">В этой категории пока нет товаров. Администратор скоро добавит новые товары.</p></div>';
                 return;
             }
             
             applyFilters();
         } catch (error) {
             console.error('[v0] Error loading products:', error);
-            document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки товаров</p></div>';
+            document.getElementById('products').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-text">Ошибка загрузки товаров. Попробуйте обновить страницу.</p></div>';
         }
     }
 
