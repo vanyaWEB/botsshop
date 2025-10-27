@@ -170,7 +170,7 @@ def admin_categories_api():
     try:
         if request.method == 'GET':
             with get_db() as db:
-                categories = crud.get_all_categories(db)
+                categories = crud.get_categories(db, active_only=False)
                 return jsonify([{
                     'id': cat.id,
                     'name': cat.name,
@@ -190,13 +190,18 @@ def admin_categories_api():
                     description=data.get('description'),
                     icon=data.get('icon')
                 )
+                if 'is_active' in data:
+                    category.is_active = data['is_active']
+                    db.commit()
+                    db.refresh(category)
                 return jsonify({
                     'id': category.id,
                     'name': category.name,
                     'description': category.description,
                     'icon': category.icon,
                     'position': category.position,
-                    'is_active': category.is_active
+                    'is_active': category.is_active,
+                    'product_count': 0
                 }), 201
     except Exception as e:
         app.logger.error(f"Error in admin categories API: {e}")
