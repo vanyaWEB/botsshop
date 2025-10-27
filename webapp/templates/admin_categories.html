@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block title %}Управление категориями{% endblock %}
+
+{% block styles %}
+<style>
+    .admin-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    .admin-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .admin-title {
+        font-size: 2rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.75rem;
+        border: none;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-size: 0.95rem;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-secondary {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .btn-secondary:hover {
+        background: #e5e7eb;
+    }
+
+    .btn-danger {
+        background: #ef4444;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #dc2626;
+    }
+
+    .categories-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .category-card {
+        background: white;
+        border: 2px solid #e5e7eb;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        transition: all 0.3s;
+    }
+
+    .category-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+        border-color: #6366f1;
+    }
+
+    .category-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+
+    .category-name {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 0.5rem;
+    }
+
+    .category-description {
+        color: #6b7280;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .category-stats {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    .category-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 1.5rem;
+        padding: 2rem;
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .modal-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin-bottom: 1.5rem;
+        color: #111827;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: #374151;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        font-size: 1rem;
+        transition: all 0.3s;
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .form-textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+    }
+
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .status-active {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .status-inactive {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6b7280;
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+
+    @media (max-width: 768px) {
+        .categories-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <div>
+            <h1 class="admin-title">Управление категориями</h1>
+            <p style="color: #6b7280;">Создавайте и редактируйте категории товаров</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">+ Создать категорию</button>
+    </div>
+
+    <div id="categoriesContainer" class="categories-grid">
+        <div class="empty-state">
+            <div class="empty-state-icon">📦</div>
+            <p>Загрузка категорий...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div id="categoryModal" class="modal">
+    <div class="modal-content">
+        <h2 class="modal-title" id="modalTitle">Создать категорию</h2>
+        <form id="categoryForm" onsubmit="saveCategory(event)">
+            <input type="hidden" id="categoryId">
+            
+            <div class="form-group">
+                <label class="form-label">Название *</label>
+                <input type="text" id="categoryName" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Описание</label>
+                <textarea id="categoryDescription" class="form-input form-textarea"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Иконка (эмодзи)</label>
+                <input type="text" id="categoryIcon" class="form-input" placeholder="👕">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="categoryActive" checked>
+                    Активна
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let categories = [];
+
+    async function loadCategories() {
+        try {
+            const response = await fetch('/api/admin/categories');
+            categories = await response.json();
+            renderCategories();
+        } catch (error) {
+            console.error('[v0] Error loading categories:', error);
+            document.getElementById('categoriesContainer').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">⚠️</div>
+                    <p>Ошибка загрузки категорий</p>
+                </div>
+            `;
+        }
+    }
+
+    function renderCategories() {
+        const container = document.getElementById('categoriesContainer');
+        
+        if (categories.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📦</div>
+                    <p>Категорий пока нет</p>
+                    <button class="btn btn-primary" onclick="openCreateModal()" style="margin-top: 1rem;">Создать первую категорию</button>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = categories.map(cat => `
+            <div class="category-card">
+                <div class="category-header">
+                    <div>
+                        <div class="category-name">${cat.icon || '📦'} ${cat.name}</div>
+                        <span class="status-badge ${cat.is_active ? 'status-active' : 'status-inactive'}">
+                            ${cat.is_active ? 'Активна' : 'Неактивна'}
+                        </span>
+                    </div>
+                </div>
+                <div class="category-description">${cat.description || 'Без описания'}</div>
+                <div class="category-stats">
+                    <span>Товаров: ${cat.product_count}</span>
+                    <span>Позиция: ${cat.position}</span>
+                </div>
+                <div class="category-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="editCategory(${cat.id})">Редактировать</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteCategory(${cat.id})">Удалить</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function openCreateModal() {
+        document.getElementById('modalTitle').textContent = 'Создать категорию';
+        document.getElementById('categoryForm').reset();
+        document.getElementById('categoryId').value = '';
+        document.getElementById('categoryActive').checked = true;
+        document.getElementById('categoryModal').classList.add('active');
+    }
+
+    function editCategory(id) {
+        const category = categories.find(c => c.id === id);
+        if (!category) return;
+
+        document.getElementById('modalTitle').textContent = 'Редактировать категорию';
+        document.getElementById('categoryId').value = category.id;
+        document.getElementById('categoryName').value = category.name;
+        document.getElementById('categoryDescription').value = category.description || '';
+        document.getElementById('categoryIcon').value = category.icon || '';
+        document.getElementById('categoryActive').checked = category.is_active;
+        document.getElementById('categoryModal').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('categoryModal').classList.remove('active');
+    }
+
+    async function saveCategory(event) {
+        event.preventDefault();
+
+        const id = document.getElementById('categoryId').value;
+        const data = {
+            name: document.getElementById('categoryName').value,
+            description: document.getElementById('categoryDescription').value,
+            icon: document.getElementById('categoryIcon').value,
+            is_active: document.getElementById('categoryActive').checked
+        };
+
+        try {
+            const url = id ? `/api/admin/categories/${id}` : '/api/admin/categories';
+            const method = id ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) throw new Error('Failed to save category');
+
+            closeModal();
+            await loadCategories();
+        } catch (error) {
+            console.error('[v0] Error saving category:', error);
+            alert('Ошибка при сохранении категории');
+        }
+    }
+
+    async function deleteCategory(id) {
+        if (!confirm('Вы уверены, что хотите удалить эту категорию? Все товары в ней также будут удалены.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/categories/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to delete category');
+
+            await loadCategories();
+        } catch (error) {
+            console.error('[v0] Error deleting category:', error);
+            alert('Ошибка при удалении категории');
+        }
+    }
+
+    // Close modal on outside click
+    document.getElementById('categoryModal').addEventListener('click', (e) => {
+        if (e.target.id === 'categoryModal') {
+            closeModal();
+        }
+    });
+
+    loadCategories();
+</script>
+{% endblock %}
