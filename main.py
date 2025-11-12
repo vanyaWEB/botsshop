@@ -1,9 +1,10 @@
 """
-✅ Free ChatGPT-like Bot — Official Hugging Face Hub (InferenceClient)
----------------------------------------------------------------------
-• Использует huggingface_hub.InferenceClient — без ручных HTTP-запросов
-• Работает бесплатно с open-source моделями (Mistral, Zephyr, Llama3)
-• Мультичаты, очистка, rate-limit, контекст
+🔥 Ultimate Free ChatGPT-like Bot (Hugging Face Official)
+---------------------------------------------------------
+• HuggingFace Hub InferenceClient
+• Бесплатные open-source модели (Zephyr, Mistral, Llama-3)
+• Мультичаты, очистка, rate-limit
+• Полностью асинхронный, без OpenAI
 """
 
 import os
@@ -11,193 +12,200 @@ import time
 import asyncio
 import logging
 from collections import defaultdict, deque
-
-from huggingface_hub import InferenceClient
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 
-# -------------------- Setup --------------------
+# -------------------- SETUP --------------------
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("HFChatBot")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s"
+)
+log = logging.getLogger("FreeHFChatBot")
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")  # можно пустым
 
 if not TG_BOT_TOKEN:
-    raise SystemExit("❌ Missing TG_BOT_TOKEN in .env")
+    raise SystemExit("❌ TG_BOT_TOKEN не найден в .env")
 
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------------- Hugging Face Client --------------------
+# -------------------- HF CLIENT --------------------
 client = InferenceClient(token=HF_API_KEY or None)
-
-# Популярные доступные модели с чат-поддержкой
-HF_MODEL_CANDIDATES = [
+HF_MODELS = [
     "mistralai/Mistral-7B-Instruct-v0.3",
     "HuggingFaceH4/zephyr-7b-beta",
     "meta-llama/Llama-3-8b-chat-hf",
 ]
-
 SYSTEM_PROMPT = (
     "Ты — дружелюбный, профессиональный ассистент. "
-    "Отвечай кратко, чётко, по делу. Если не уверен — скажи об этом."
+    "Отвечай кратко, чётко и по существу. "
+    "Если не уверен — скажи честно."
 )
 
-# -------------------- Память чатов --------------------
-user_chats: dict[int, dict[str, deque[str]]] = {}
+# -------------------- МЕМОРИ --------------------
 MAX_TURNS = 20
+user_chats: dict[int, dict[str, deque[str]]] = {}
 
-def get_or_create_chat(user_id: int, chat_name: str) -> deque:
-    user_chats.setdefault(user_id, {})
-    user_chats[user_id].setdefault(chat_name, deque(maxlen=MAX_TURNS))
-    return user_chats[user_id][chat_name]
+def get_or_create_chat(uid: int, name: str) -> deque[str]:
+    user_chats.setdefault(uid, {})
+    user_chats[uid].setdefault(name, deque(maxlen=MAX_TURNS))
+    return user_chats[uid][name]
 
-def get_active_chat(user_id: int) -> str:
-    chats = user_chats.get(user_id, {})
+def get_active_chat(uid: int) -> str:
+    chats = user_chats.get(uid, {})
     if not chats:
-        user_chats[user_id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
+        user_chats[uid] = {"Чат 1": deque(maxlen=MAX_TURNS)}
         return "Чат 1"
-    return chats.get("_active", sorted([k for k in chats.keys() if k != "_active"]) or ["Чат 1"])[0]
+    return chats.get("_active", sorted([k for k in chats if k != "_active"]) or ["Чат 1"])[0]
 
-def set_active_chat(user_id: int, chat_name: str):
-    user_chats.setdefault(user_id, {})
-    user_chats[user_id]["_active"] = chat_name
+def set_active_chat(uid: int, name: str):
+    user_chats.setdefault(uid, {})
+    user_chats[uid]["_active"] = name
 
-def clear_chat(user_id: int, chat_name: str):
-    if user_id in user_chats and chat_name in user_chats[user_id]:
-        user_chats[user_id][chat_name].clear()
+def clear_chat(uid: int, name: str):
+    if uid in user_chats and name in user_chats[uid]:
+        user_chats[uid][name].clear()
 
-def chat_menu_kb(user_id: int):
-    chats = [k for k in user_chats.get(user_id, {}).keys() if k != "_active"]
-    buttons = [[InlineKeyboardButton(text=name, callback_data=f"select:{name}")] for name in chats]
-    buttons.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new_chat")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def control_kb():
+def kb_controls():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clear_chat")],
-            [InlineKeyboardButton(text="📋 Мои чаты", callback_data="show_chats")]
+            [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clear")],
+            [InlineKeyboardButton(text="📋 Мои чаты", callback_data="show")]
         ]
     )
 
-# -------------------- Rate-limit --------------------
-USER_COOLDOWN_SEC = 2.0
-GLOBAL_MAX_PER_MIN = 10
-_last_user_ts: dict[int, float] = defaultdict(lambda: 0.0)
-_global_events: deque[float] = deque()
+def kb_chats(uid: int):
+    names = [k for k in user_chats.get(uid, {}) if k != "_active"]
+    buttons = [[InlineKeyboardButton(text=n, callback_data=f"sel:{n}")] for n in names]
+    buttons.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def allow_request(uid: int) -> tuple[bool, str | None]:
+# -------------------- RATE LIMIT --------------------
+USER_DELAY = 2.0
+GLOBAL_LIMIT = 10
+_last_user = defaultdict(lambda: 0.0)
+_events = deque()
+
+def check_limit(uid: int):
     now = time.time()
-    if now - _last_user_ts[uid] < USER_COOLDOWN_SEC:
-        wait = USER_COOLDOWN_SEC - (now - _last_user_ts[uid])
-        return False, f"Слишком часто. Подожди {wait:.0f} сек."
-    while _global_events and now - _global_events[0] > 60:
-        _global_events.popleft()
-    if len(_global_events) >= GLOBAL_MAX_PER_MIN:
-        return False, "Я сейчас отвечаю другим. Попробуй через минуту."
-    _last_user_ts[uid] = now
-    _global_events.append(now)
+    if now - _last_user[uid] < USER_DELAY:
+        return False, f"⏳ Подожди {USER_DELAY - (now - _last_user[uid]):.1f} с"
+    while _events and now - _events[0] > 60:
+        _events.popleft()
+    if len(_events) >= GLOBAL_LIMIT:
+        return False, "⚡ Много запросов. Попробуй через минуту."
+    _last_user[uid] = now
+    _events.append(now)
     return True, None
 
-# -------------------- Инференс --------------------
-_cached_model = {"name": None, "ts": 0.0}
+# -------------------- HF CHAT --------------------
+_cached = {"name": None, "ts": 0.0}
 CACHE_TTL = 600.0
 
 async def hf_chat(prompt: str) -> str:
+    """Асинхронный вызов чата через huggingface_hub"""
     now = time.time()
-    if _cached_model["name"] and now - _cached_model["ts"] < CACHE_TTL:
-        try:
-            response = client.chat_completion(
-                model=_cached_model["name"],
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
-                max_tokens=400,
-                temperature=0.7,
-            )
-            return response.choices[0].message["content"].strip()
-        except Exception as e:
-            log.warning(f"Cached model {_cached_model['name']} failed: {e}")
-            _cached_model["name"] = None
 
-    # Перебираем модели по очереди
-    for model in HF_MODEL_CANDIDATES:
+    async def _call(model: str) -> str:
+        resp = await asyncio.to_thread(
+            client.chat_completion,
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=400,
+            temperature=0.7,
+        )
+        return resp.choices[0].message["content"].strip()
+
+    if _cached["name"] and now - _cached["ts"] < CACHE_TTL:
         try:
-            response = client.chat_completion(
-                model=model,
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
-                max_tokens=400,
-                temperature=0.7,
-            )
-            txt = response.choices[0].message["content"].strip()
-            _cached_model.update({"name": model, "ts": now})
-            log.info(f"✅ Using model: {model}")
+            return await _call(_cached["name"])
+        except Exception as e:
+            log.warning(f"⚠️ Кэш-модель {_cached['name']} отвалилась: {e}")
+            _cached["name"] = None
+
+    for m in HF_MODELS:
+        try:
+            txt = await _call(m)
+            log.info(f"✅ Используется модель: {m}")
+            _cached.update({"name": m, "ts": now})
             return txt
         except Exception as e:
-            log.warning(f"⚠️ Model {model} failed: {e}")
-    return "Все бесплатные модели Hugging Face сейчас недоступны. Попробуй чуть позже."
+            log.warning(f"❌ {m}: {e}")
+    return "😔 Сейчас нет доступных моделей HF. Попробуй позже."
 
-# -------------------- Telegram --------------------
+# -------------------- TELEGRAM --------------------
 @dp.message(CommandStart())
-async def start(message: types.Message):
-    user_chats[message.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
-    await message.answer(
-        "👋 Привет! Я бесплатный ChatGPT-бот через Hugging Face Hub.\n"
-        "Можешь спрашивать что угодно — я попробую помочь!",
-        reply_markup=control_kb()
+async def start(msg: types.Message):
+    user_chats[msg.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
+    await msg.answer(
+        "👋 Привет! Я ChatGPT-бот на бесплатных моделях Hugging Face.\n"
+        "Пиши сообщение — я отвечу 🤖",
+        reply_markup=kb_controls()
     )
 
 @dp.callback_query()
-async def callbacks(callback: types.CallbackQuery):
-    uid = callback.from_user.id
-    data = callback.data
-    if data == "clear_chat":
-        chat_name = get_active_chat(uid)
-        clear_chat(uid, chat_name)
-        await callback.message.answer(f"{chat_name} очищен ✅", reply_markup=control_kb())
-        return await callback.answer()
-    if data == "new_chat":
-        current = user_chats.get(uid, {})
-        idx = len([k for k in current.keys() if k != "_active"]) + 1
-        chat_name = f"Чат {idx}"
-        user_chats.setdefault(uid, {})[chat_name] = deque(maxlen=MAX_TURNS)
-        set_active_chat(uid, chat_name)
-        await callback.message.answer(f"Создан {chat_name}. Начни разговор 💬", reply_markup=control_kb())
-        return await callback.answer()
-    if data == "show_chats":
-        await callback.message.answer("📋 Твои чаты:", reply_markup=chat_menu_kb(uid))
-        return await callback.answer()
-    if data.startswith("select:"):
-        chat_name = data.split(":", 1)[1]
-        if uid in user_chats and chat_name in user_chats[uid]:
-            set_active_chat(uid, chat_name)
-            await callback.message.answer(f"✅ Активен {chat_name}", reply_markup=control_kb())
+async def callbacks(cb: types.CallbackQuery):
+    uid = cb.from_user.id
+    data = cb.data
+
+    if data == "clear":
+        n = get_active_chat(uid)
+        clear_chat(uid, n)
+        await cb.message.answer(f"{n} очищен ✅", reply_markup=kb_controls())
+        return await cb.answer()
+
+    if data == "new":
+        chats = user_chats.get(uid, {})
+        i = len([k for k in chats if k != "_active"]) + 1
+        n = f"Чат {i}"
+        user_chats.setdefault(uid, {})[n] = deque(maxlen=MAX_TURNS)
+        set_active_chat(uid, n)
+        await cb.message.answer(f"Создан {n} 💬", reply_markup=kb_controls())
+        return await cb.answer()
+
+    if data == "show":
+        await cb.message.answer("📋 Выбери чат:", reply_markup=kb_chats(uid))
+        return await cb.answer()
+
+    if data.startswith("sel:"):
+        n = data.split(":", 1)[1]
+        if uid in user_chats and n in user_chats[uid]:
+            set_active_chat(uid, n)
+            await cb.message.answer(f"✅ Активен {n}", reply_markup=kb_controls())
         else:
-            await callback.message.answer("❌ Чат не найден.")
-        return await callback.answer()
+            await cb.message.answer("❌ Чат не найден.")
+        return await cb.answer()
 
 @dp.message()
-async def chat(message: types.Message):
-    uid = message.from_user.id
-    text = message.text.strip()
-    ok, warn = allow_request(uid)
+async def handle_chat(msg: types.Message):
+    uid = msg.from_user.id
+    txt = msg.text.strip()
+    ok, warn = check_limit(uid)
     if not ok:
-        return await message.answer(warn, reply_markup=control_kb())
-    chat_name = get_active_chat(uid)
-    history = get_or_create_chat(uid, chat_name)
-    history.append(f"Пользователь: {text}")
-    prompt = "\n".join(history)[-4000:]
-    await message.chat.do("typing")
-    reply = await asyncio.to_thread(hf_chat, prompt)
-    history.append(f"ИИ: {reply}")
-    await message.answer(reply, reply_markup=control_kb())
+        return await msg.answer(warn, reply_markup=kb_controls())
 
-# -------------------- Runner --------------------
+    name = get_active_chat(uid)
+    hist = get_or_create_chat(uid, name)
+    hist.append(f"Пользователь: {txt}")
+    prompt = "\n".join(hist)[-4000:]
+
+    await msg.chat.do("typing")
+    reply = await hf_chat(prompt)
+    hist.append(f"ИИ: {reply}")
+    await msg.answer(reply, reply_markup=kb_controls())
+
+# -------------------- RUN --------------------
 async def main():
-    log.info("🚀 Free ChatGPT-like Bot started via Hugging Face Hub InferenceClient")
+    log.info("🚀 Free ChatGPT-like Bot (Hugging Face) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
