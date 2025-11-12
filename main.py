@@ -1,7 +1,7 @@
 """
-Ultimate Pro AI Chat Bot (Updated for Hugging Face Router)
-----------------------------------------------------------
-Исправлено подключение к нейросети: используется новый endpoint Hugging Face.
+Ultimate Pro AI Chat Bot (Multi-Chat + Fixed Hugging Face Router)
+-----------------------------------------------------------------
+Добавлен новый endpoint Hugging Face и восстановлено меню чатов.
 """
 
 import os
@@ -55,7 +55,7 @@ async def hf_reply(prompt: str) -> str:
             r = await client.post(MODEL_URL, headers=headers, json=payload)
             if r.status_code != 200:
                 log.error("HF API error %s %s", r.status_code, r.text)
-                return "Ошибка соединения с моделью Hugging Face. Попробуйте позже."
+                return f"Ошибка модели ({r.status_code}). Попробуйте позже."
             data = r.json()
             if isinstance(data, dict) and "generated_text" in data:
                 return data["generated_text"].strip()
@@ -67,7 +67,7 @@ async def hf_reply(prompt: str) -> str:
         log.exception("HF API exception: %s", e)
         return "Произошла ошибка при подключении к нейросети."
 
-# -------------------- Memory --------------------
+# -------------------- Multi-Chat Memory --------------------
 user_chats = {}
 
 def get_or_create_chat(user_id: int, chat_name: str):
@@ -78,13 +78,19 @@ def clear_chat(user_id: int, chat_name: str):
     if user_id in user_chats and chat_name in user_chats[user_id]:
         user_chats[user_id][chat_name] = []
 
-# -------------------- Keyboards --------------------
+def chat_menu_kb(user_id: int):
+    chats = list(user_chats.get(user_id, {}).keys())
+    if not chats:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Нет чатов", callback_data="none")]])
+    buttons = [[InlineKeyboardButton(text=name, callback_data=f"select:{name}")] for name in chats]
+    buttons.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new_chat")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def control_kb():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clear_chat")],
-            [InlineKeyboardButton(text="➕ Новый чат", callback_data="new_chat")]
+            [InlineKeyboardButton(text="📋 Мои чаты", callback_data="show_chats")]
         ]
     )
 
@@ -94,24 +100,41 @@ def control_kb():
 async def cmd_start(message: types.Message):
     user_chats[message.from_user.id] = {"Чат 1": []}
     await message.answer(
-        "👋 Привет! Я обновлённый AI-бот с подключением к новой Hugging Face API.\n"
-        "Теперь я отвечаю стабильнее и быстрее!", reply_markup=control_kb()
+        "👋 Привет! Я обновлённый AI-бот с меню чатов и новой Hugging Face API!",
+        reply_markup=control_kb()
     )
 
 @dp.callback_query()
 async def callbacks(callback: types.CallbackQuery):
     uid = callback.from_user.id
     data = callback.data
+
     if data == "clear_chat":
-        clear_chat(uid, "Чат 1")
-        await callback.message.answer("Чат очищен ✅", reply_markup=control_kb())
+        chats = user_chats.get(uid, {"Чат 1": []})
+        current_chat = sorted(chats.keys())[-1]
+        clear_chat(uid, current_chat)
+        await callback.message.answer(f"{current_chat} очищен ✅", reply_markup=control_kb())
         await callback.answer()
+
     elif data == "new_chat":
         current_chats = user_chats.get(uid, {})
         new_index = len(current_chats) + 1
         chat_name = f"Чат {new_index}"
         user_chats[uid][chat_name] = []
         await callback.message.answer(f"Создан {chat_name}. Начните разговор 💬", reply_markup=control_kb())
+        await callback.answer()
+
+    elif data == "show_chats":
+        await callback.message.answer("📋 Выберите чат:", reply_markup=chat_menu_kb(uid))
+        await callback.answer()
+
+    elif data.startswith("select:"):
+        chat_name = data.split(":", 1)[1]
+        if uid in user_chats and chat_name in user_chats[uid]:
+            user_chats[uid]["_active"] = chat_name
+            await callback.message.answer(f"✅ Активен {chat_name}", reply_markup=control_kb())
+        else:
+            await callback.message.answer("❌ Чат не найден.")
         await callback.answer()
 
 # -------------------- Chat Logic --------------------
@@ -121,8 +144,11 @@ async def chat(message: types.Message):
     uid = message.from_user.id
     text = message.text.strip()
 
-    chats = user_chats.setdefault(uid, {"Чат 1": []})
-    current_chat = sorted(chats.keys())[-1]
+    if uid not in user_chats:
+        user_chats[uid] = {"Чат 1": []}
+
+    chats = user_chats[uid]
+    current_chat = chats.get("_active", sorted(chats.keys())[-1])
     history = get_or_create_chat(uid, current_chat)
 
     history.append(f"Пользователь: {text}")
@@ -139,7 +165,7 @@ async def chat(message: types.Message):
 
 # -------------------- Runner --------------------
 async def main():
-    log.info("🚀 Ultimate Pro AI Chat Bot connected to new HF endpoint!")
+    log.info("🚀 Ultimate Pro AI Chat Bot with Multi-Chat restored!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
