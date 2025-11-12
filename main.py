@@ -1,13 +1,13 @@
 """
-🚀 Ultimate AI Bot — OpenRouter Edition
----------------------------------------
-• Работает через OpenRouter.ai (бесплатно)
-• Совместим с OpenAI API
-• Мультичаты, очистка, память
-• Минимальная нагрузка на RAM
+🤖 Ultimate OpenRouter Bot v2.0 (Русский / Тематические чаты)
+--------------------------------------------------------------
+• Автоматическое имя чата по теме
+• Очистка и удаление чатов
+• Русская речь только
+• OpenRouter Mixtral 8x7B
 """
 
-import os, time, asyncio, logging, httpx
+import os, time, asyncio, logging, httpx, re
 from collections import defaultdict, deque
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -17,25 +17,33 @@ from dotenv import load_dotenv
 # -------------------- SETUP --------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("OpenRouterBot")
+log = logging.getLogger("OpenRouterProBot")
 
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 if not TG_BOT_TOKEN:
-    raise SystemExit("❌ Нет TG_BOT_TOKEN в .env")
+    raise SystemExit("❌ TG_BOT_TOKEN отсутствует")
 
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------------- MEMORY --------------------
+# -------------------- STORAGE --------------------
 MAX_TURNS = 20
-user_chats: dict[int, dict[str, deque[str]]] = defaultdict(dict)
-_last_user: dict[int, float] = defaultdict(float)
+user_chats = defaultdict(dict)
+_last_msg = defaultdict(float)
 COOLDOWN = 2.0
 
-def get_or_create_chat(uid: int, name: str) -> deque[str]:
+def normalize_text_ru(text: str) -> str:
+    # Перевод латиницы в русские буквы (простейший транслит)
+    mapping = str.maketrans("abvgdezijklmnoprstufhcyABVGDEZIJKLMNOPRSTUFHCY", 
+                             "абвгдезийклмнопрстуфхсүАБВГДЕЗИЙКЛМНОПРСТУФХСҮ")
+    text = text.translate(mapping)
+    text = re.sub(r"[^А-Яа-я0-9,.!? ]+", "", text)
+    return text.strip()
+
+def get_or_create_chat(uid: int, name: str) -> deque:
     user_chats.setdefault(uid, {})
     user_chats[uid].setdefault(name, deque(maxlen=MAX_TURNS))
     return user_chats[uid][name]
@@ -52,10 +60,14 @@ def set_active_chat(uid: int, name: str):
     user_chats[uid]["_active"] = name
 
 def clear_chat(uid: int, name: str):
-    if uid in user_chats and name in user_chats[uid]:
+    if name in user_chats.get(uid, {}):
         user_chats[uid][name].clear()
 
-# -------------------- UI --------------------
+def delete_chat(uid: int, name: str):
+    if name in user_chats.get(uid, {}):
+        del user_chats[uid][name]
+
+# -------------------- KEYBOARDS --------------------
 def kb_controls():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -66,33 +78,37 @@ def kb_controls():
 
 def kb_chats(uid: int):
     chats = [k for k in user_chats.get(uid, {}) if k != "_active"]
-    buttons = [[InlineKeyboardButton(text=name, callback_data=f"sel:{name}")] for name in chats]
+    buttons = [
+        [InlineKeyboardButton(text=name, callback_data=f"sel:{name}"),
+         InlineKeyboardButton(text="❌", callback_data=f"del:{name}")]
+        for name in chats
+    ]
     buttons.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new_chat")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # -------------------- RATE LIMIT --------------------
 def allow_request(uid: int) -> tuple[bool, str | None]:
     now = time.time()
-    if now - _last_user[uid] < COOLDOWN:
-        wait = COOLDOWN - (now - _last_user[uid])
+    if now - _last_msg[uid] < COOLDOWN:
+        wait = COOLDOWN - (now - _last_msg[uid])
         return False, f"⏳ Подожди {wait:.1f} сек."
-    _last_user[uid] = now
+    _last_msg[uid] = now
     return True, None
 
-# -------------------- CHAT COMPLETION --------------------
-async def ai_reply(prompt: str) -> str:
+# -------------------- AI LOGIC --------------------
+async def openrouter_chat(prompt: str, system_msg="Ты — русскоязычный помощник, отвечай только на кириллице.") -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "mistralai/mixtral-8x7b-instruct",  # бесплатная мощная модель
+        "model": "mistralai/mixtral-8x7b-instruct",
         "messages": [
-            {"role": "system", "content": "Ты — умный и дружелюбный ассистент. Отвечай ясно и интересно."},
+            {"role": "system", "content": system_msg},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": 400,
-        "temperature": 0.7,
+        "temperature": 0.6,
     }
 
     async with httpx.AsyncClient(timeout=90) as client:
@@ -101,39 +117,44 @@ async def ai_reply(prompt: str) -> str:
             data = r.json()
             return data["choices"][0]["message"]["content"].strip()
         else:
-            log.warning(f"⚠️ OpenRouter error {r.status_code}: {r.text[:100]}")
+            log.warning(f"⚠️ OpenRouter error {r.status_code}: {r.text[:200]}")
             return "😔 Нейросеть сейчас недоступна. Попробуй позже."
 
-# -------------------- TELEGRAM --------------------
+async def detect_topic(text: str) -> str:
+    """Быстро определяет тему диалога"""
+    reply = await openrouter_chat(f"Определи краткое название темы (1–3 слова) на русском для текста:\n{text}")
+    return re.sub(r"[^А-Яа-я0-9 ]+", "", reply).strip().capitalize() or "Без темы"
+
+# -------------------- HANDLERS --------------------
 @dp.message(CommandStart())
 async def start(msg: types.Message):
     user_chats[msg.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
     await msg.answer(
-        "👋 Привет! Я AI-бот на базе **Mixtral 8x7B** (через OpenRouter.ai)\n"
-        "Создавай чаты, очищай историю и задавай любые вопросы!",
-        reply_markup=kb_controls(),
+        "👋 Привет! Я AI-бот на базе **Mixtral 8×7B** через OpenRouter.\n"
+        "Я говорю только по-русски, а темы чатов определяются автоматически.",
+        reply_markup=kb_controls()
     )
 
 @dp.callback_query()
 async def callbacks(cb: types.CallbackQuery):
     uid, data = cb.from_user.id, cb.data
+
     if data == "clear_chat":
         name = get_active_chat(uid)
         clear_chat(uid, name)
-        await cb.message.answer(f"{name} очищен ✅", reply_markup=kb_controls())
+        await cb.message.answer(f"✅ {name} очищен", reply_markup=kb_controls())
         return await cb.answer()
 
     if data == "new_chat":
         current = user_chats.get(uid, {})
-        index = len([k for k in current if k != "_active"]) + 1
-        name = f"Чат {index}"
+        name = f"Чат {len([k for k in current if k != '_active']) + 1}"
         user_chats[uid][name] = deque(maxlen=MAX_TURNS)
         set_active_chat(uid, name)
-        await cb.message.answer(f"Создан {name} 💬", reply_markup=kb_controls())
+        await cb.message.answer(f"Создан {name}. Начни разговор 💬", reply_markup=kb_controls())
         return await cb.answer()
 
     if data == "show_chats":
-        await cb.message.answer("📋 Выбери чат:", reply_markup=kb_chats(uid))
+        await cb.message.answer("📋 Твои чаты:", reply_markup=kb_chats(uid))
         return await cb.answer()
 
     if data.startswith("sel:"):
@@ -145,9 +166,15 @@ async def callbacks(cb: types.CallbackQuery):
             await cb.message.answer("❌ Чат не найден.")
         return await cb.answer()
 
+    if data.startswith("del:"):
+        name = data.split(":", 1)[1]
+        delete_chat(uid, name)
+        await cb.message.answer(f"🗑 {name} удалён.", reply_markup=kb_chats(uid))
+        return await cb.answer()
+
 @dp.message()
 async def chat(msg: types.Message):
-    uid, text = msg.from_user.id, msg.text.strip()
+    uid, text = msg.from_user.id, normalize_text_ru(msg.text)
     ok, warn = allow_request(uid)
     if not ok:
         return await msg.answer(warn, reply_markup=kb_controls())
@@ -155,16 +182,23 @@ async def chat(msg: types.Message):
     name = get_active_chat(uid)
     hist = get_or_create_chat(uid, name)
     hist.append(f"Пользователь: {text}")
-    prompt = "\n".join(hist)[-4000:]
 
+    # авто-переименование по теме
+    if len(hist) == 1 and name.startswith("Чат"):
+        topic = await detect_topic(text)
+        user_chats[uid][topic] = user_chats[uid].pop(name)
+        set_active_chat(uid, topic)
+        name = topic
+
+    prompt = "\n".join(hist)[-4000:]
     await msg.chat.do("typing")
-    reply = await ai_reply(prompt)
+    reply = await openrouter_chat(prompt)
     hist.append(f"ИИ: {reply}")
     await msg.answer(reply, reply_markup=kb_controls())
 
 # -------------------- RUN --------------------
 async def main():
-    log.info("🚀 Ultimate OpenRouter Bot запущен!")
+    log.info("🚀 Ultimate OpenRouter AI Bot v2.0 запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
