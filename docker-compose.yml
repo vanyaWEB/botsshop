@@ -9,7 +9,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    command: python run.py
+    command: python bot.py
 
   webapp:
     build: .
