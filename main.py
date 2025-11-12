@@ -1,166 +1,107 @@
 """
-🔥 Ultimate Free ChatGPT-like Bot — Hugging Face Router v2
-----------------------------------------------------------
-• Работает бесплатно на open-source моделях
-• Использует новый endpoint https://router.huggingface.co/hf-inference/v1/chat/completions
-• Полностью асинхронный, с мультичатами, очисткой и rate-limit
+💡 Free Mistral AI Chat Bot (Router v2)
+--------------------------------------
+• Использует Mistral-7B-Instruct-v0.3
+• Абсолютно бесплатный, без OpenAI
+• Поддержка очистки чата и rate-limit
 """
 
-import os, time, asyncio, logging, httpx
-from collections import defaultdict, deque
+import os, time, asyncio, httpx, logging
+from collections import deque, defaultdict
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 
-# ---------- CONFIG ----------
+# --- Setup ---
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("RouterChatBot")
+log = logging.getLogger("MistralBot")
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")
 if not TG_BOT_TOKEN:
-    raise SystemExit("❌ TG_BOT_TOKEN отсутствует")
+    raise SystemExit("❌ TG_BOT_TOKEN отсутствует в .env")
 
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# ---------- HUGGING FACE ----------
-HF_MODELS = [
-    "meta-llama/Llama-3-8b-chat-hf",
-    "HuggingFaceH4/zephyr-7b-beta",
-    "mistralai/Mistral-7B-Instruct-v0.3",
-]
+# --- HF Endpoint ---
 HF_URL = "https://router.huggingface.co/hf-inference/v1/chat/completions"
+MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
 
 SYSTEM_PROMPT = (
-    "Ты — дружелюбный профессиональный ассистент. Отвечай кратко и по существу. "
-    "Если не уверен — честно скажи."
+    "Ты — умный, уверенный и дружелюбный ассистент. "
+    "Отвечай по делу, вежливо и максимально полезно."
 )
 
-# ---------- MEMORY ----------
-user_chats: dict[int, dict[str, deque[str]]] = {}
-MAX_TURNS = 20
+# --- Memory & Rate limit ---
+user_chats = defaultdict(lambda: deque(maxlen=20))
+user_last = defaultdict(float)
+COOLDOWN = 2.0
 
-def get_or_create(uid, name):
-    user_chats.setdefault(uid, {})
-    user_chats[uid].setdefault(name, deque(maxlen=MAX_TURNS))
-    return user_chats[uid][name]
+def control_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clr")]
+    ])
 
-def active_chat(uid):
-    chats = user_chats.get(uid, {})
-    if not chats:
-        user_chats[uid] = {"Чат 1": deque(maxlen=MAX_TURNS)}
-        return "Чат 1"
-    return chats.get("_active", sorted([k for k in chats if k != "_active"]) or ["Чат 1"])[0]
-
-def set_active(uid, name):
-    user_chats.setdefault(uid, {})
-    user_chats[uid]["_active"] = name
-
-# ---------- RATE LIMIT ----------
-USER_DELAY = 2.0
-GLOBAL_LIMIT = 10
-_last = defaultdict(lambda: 0.0)
-_events = deque()
-
-def allow(uid):
-    now = time.time()
-    if now - _last[uid] < USER_DELAY:
-        return False, f"⏳ Подожди {USER_DELAY - (now - _last[uid]):.1f} с"
-    while _events and now - _events[0] > 60:
-        _events.popleft()
-    if len(_events) >= GLOBAL_LIMIT:
-        return False, "⚡ Перегруз. Попробуй через минуту."
-    _last[uid] = now
-    _events.append(now)
-    return True, None
-
-# ---------- CHAT COMPLETION ----------
-async def hf_chat(prompt: str) -> str:
+# --- Hugging Face call ---
+async def mistral_chat(prompt: str) -> str:
     payload = {
-        "model": HF_MODELS[0],
+        "model": MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 400,
-        "temperature": 0.7,
+        "temperature": 0.7
     }
-    async with httpx.AsyncClient(timeout=90) as client:
-        for model in HF_MODELS:
-            payload["model"] = model
-            try:
-                r = await client.post(HF_URL, headers=HEADERS, json=payload)
-                if r.status_code == 200:
-                    data = r.json()
-                    text = data["choices"][0]["message"]["content"].strip()
-                    log.info(f"✅ Модель: {model}")
-                    return text
-                else:
-                    log.warning(f"❌ {model}: {r.status_code} {r.text[:80]}")
-            except Exception as e:
-                log.warning(f"⚠️ Ошибка {model}: {e}")
-    return "😔 Все бесплатные модели временно недоступны."
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(HF_URL, headers=HEADERS, json=payload)
+        if r.status_code == 200:
+            data = r.json()
+            return data["choices"][0]["message"]["content"].strip()
+        else:
+            log.error(f"HF {r.status_code}: {r.text}")
+            return "🤖 Ошибка соединения с Mistral AI."
 
-# ---------- UI ----------
-def kb_controls():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clr")],
-        [InlineKeyboardButton(text="📋 Мои чаты", callback_data="list")]
-    ])
-
-def kb_chats(uid):
-    names = [k for k in user_chats.get(uid, {}) if k != "_active"]
-    btns = [[InlineKeyboardButton(text=n, callback_data=f"sel:{n}")] for n in names]
-    btns.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new")])
-    return InlineKeyboardMarkup(inline_keyboard=btns)
-
-# ---------- TELEGRAM ----------
+# --- Telegram ---
 @dp.message(CommandStart())
 async def start(msg: types.Message):
-    user_chats[msg.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
+    user_chats[msg.from_user.id].clear()
     await msg.answer(
-        "👋 Привет! Я ChatGPT-бот на бесплатных моделях Hugging Face Router.\nПиши — отвечу 🤖",
-        reply_markup=kb_controls()
+        "👋 Привет! Я бот на модели **Mistral-7B-Instruct-v0.3**.\n"
+        "Задавай вопросы — отвечу бесплатно 🤖",
+        reply_markup=control_kb()
     )
 
 @dp.callback_query()
-async def cb(cbq: types.CallbackQuery):
-    uid, data = cbq.from_user.id, cbq.data
-    if data == "clr":
-        n = active_chat(uid); user_chats[uid][n].clear()
-        await cbq.message.answer(f"{n} очищен ✅", reply_markup=kb_controls()); return await cbq.answer()
-    if data == "new":
-        i = len([k for k in user_chats.get(uid, {}) if k != "_active"]) + 1
-        n = f"Чат {i}"; user_chats.setdefault(uid,{})[n] = deque(maxlen=MAX_TURNS); set_active(uid,n)
-        await cbq.message.answer(f"Создан {n} 💬", reply_markup=kb_controls()); return await cbq.answer()
-    if data == "list":
-        await cbq.message.answer("📋 Выбери чат:", reply_markup=kb_chats(uid)); return await cbq.answer()
-    if data.startswith("sel:"):
-        n = data.split(":",1)[1]; set_active(uid,n)
-        await cbq.message.answer(f"✅ Активен {n}", reply_markup=kb_controls()); return await cbq.answer()
+async def callbacks(cb: types.CallbackQuery):
+    if cb.data == "clr":
+        user_chats[cb.from_user.id].clear()
+        await cb.message.answer("🧠 Чат очищен!", reply_markup=control_kb())
+        await cb.answer()
 
 @dp.message()
 async def chat(msg: types.Message):
     uid, text = msg.from_user.id, msg.text.strip()
-    ok, warn = allow(uid)
-    if not ok:
-        return await msg.answer(warn, reply_markup=kb_controls())
-    n = active_chat(uid)
-    hist = get_or_create(uid,n)
+    if time.time() - user_last[uid] < COOLDOWN:
+        return await msg.answer("⏳ Подожди пару секунд...", reply_markup=control_kb())
+    user_last[uid] = time.time()
+
+    hist = user_chats[uid]
     hist.append(f"Пользователь: {text}")
     prompt = "\n".join(hist)[-4000:]
-    await msg.chat.do("typing")
-    reply = await hf_chat(prompt)
-    hist.append(f"ИИ: {reply}")
-    await msg.answer(reply, reply_markup=kb_controls())
 
-# ---------- RUN ----------
+    await msg.chat.do("typing")
+    reply = await mistral_chat(prompt)
+    hist.append(f"ИИ: {reply}")
+    await msg.answer(reply, reply_markup=control_kb())
+
+# --- Runner ---
 async def main():
-    log.info("🚀 Free ChatGPT-like Bot запущен (HF Router v2)")
+    log.info("🚀 Запуск Mistral Chat Bot (Router v2)")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
