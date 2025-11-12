@@ -1,9 +1,9 @@
 """
-✅ Free ChatGPT-like Bot — Hugging Face Official Inference API (v1)
-------------------------------------------------------------------
-• Работает без OpenAI, бесплатно через router.huggingface.co/v1
-• Поддерживает: mistralai/Mistral-7B-Instruct, HuggingFaceH4/zephyr-7b-beta, meta-llama/Llama-3-8b-chat-hf
-• Мультичаты, очистка, rate-limit, кэширование модели.
+✅ Free ChatGPT-like Bot — Official Hugging Face Hub (InferenceClient)
+---------------------------------------------------------------------
+• Использует huggingface_hub.InferenceClient — без ручных HTTP-запросов
+• Работает бесплатно с open-source моделями (Mistral, Zephyr, Llama3)
+• Мультичаты, очистка, rate-limit, контекст
 """
 
 import os
@@ -11,7 +11,8 @@ import time
 import asyncio
 import logging
 from collections import defaultdict, deque
-import httpx
+
+from huggingface_hub import InferenceClient
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,7 +21,7 @@ from dotenv import load_dotenv
 # -------------------- Setup --------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("FreeChatBot")
+log = logging.getLogger("HFChatBot")
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")  # можно пустым
@@ -31,20 +32,22 @@ if not TG_BOT_TOKEN:
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------------- HF Router Config --------------------
-HF_BASE_URL = "https://router.huggingface.co/v1/chat/completions"
+# -------------------- Hugging Face Client --------------------
+client = InferenceClient(token=HF_API_KEY or None)
+
+# Популярные доступные модели с чат-поддержкой
 HF_MODEL_CANDIDATES = [
-    "mistralai/Mistral-7B-Instruct-v0.2",
+    "mistralai/Mistral-7B-Instruct-v0.3",
     "HuggingFaceH4/zephyr-7b-beta",
     "meta-llama/Llama-3-8b-chat-hf",
 ]
 
 SYSTEM_PROMPT = (
-    "Ты — дружелюбный AI-ассистент в стиле ChatGPT. "
-    "Отвечай чётко, по делу, без воды. Если не уверен — честно скажи."
+    "Ты — дружелюбный, профессиональный ассистент. "
+    "Отвечай кратко, чётко, по делу. Если не уверен — скажи об этом."
 )
 
-# -------------------- Memory --------------------
+# -------------------- Память чатов --------------------
 user_chats: dict[int, dict[str, deque[str]]] = {}
 MAX_TURNS = 20
 
@@ -101,46 +104,51 @@ def allow_request(uid: int) -> tuple[bool, str | None]:
     _global_events.append(now)
     return True, None
 
-# -------------------- Inference --------------------
+# -------------------- Инференс --------------------
 _cached_model = {"name": None, "ts": 0.0}
 CACHE_TTL = 600.0
 
-async def hf_chat(model: str, messages: list[dict]) -> str | None:
-    headers = {"Content-Type": "application/json"}
-    if HF_API_KEY:
-        headers["Authorization"] = f"Bearer {HF_API_KEY}"
-    payload = {"model": model, "messages": messages, "max_tokens": 400, "temperature": 0.7}
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(HF_BASE_URL, headers=headers, json=payload)
-        if r.status_code == 200:
-            data = r.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"].strip()
-        log.warning(f"HF {model} -> {r.status_code} {r.text[:150]}")
-        return None
-
-async def hf_pick_and_answer(prompt: str) -> str:
+async def hf_chat(prompt: str) -> str:
     now = time.time()
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
-    # try cached model first
     if _cached_model["name"] and now - _cached_model["ts"] < CACHE_TTL:
-        txt = await hf_chat(_cached_model["name"], msgs)
-        if txt:
+        try:
+            response = client.chat_completion(
+                model=_cached_model["name"],
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+                max_tokens=400,
+                temperature=0.7,
+            )
+            return response.choices[0].message["content"].strip()
+        except Exception as e:
+            log.warning(f"Cached model {_cached_model['name']} failed: {e}")
+            _cached_model["name"] = None
+
+    # Перебираем модели по очереди
+    for model in HF_MODEL_CANDIDATES:
+        try:
+            response = client.chat_completion(
+                model=model,
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+                max_tokens=400,
+                temperature=0.7,
+            )
+            txt = response.choices[0].message["content"].strip()
+            _cached_model.update({"name": model, "ts": now})
+            log.info(f"✅ Using model: {model}")
             return txt
-        _cached_model["name"] = None
-    # try all
-    for m in HF_MODEL_CANDIDATES:
-        txt = await hf_chat(m, msgs)
-        if txt:
-            _cached_model.update({"name": m, "ts": now})
-            return txt
-    return "Все бесплатные модели заняты. Попробуй чуть позже."
+        except Exception as e:
+            log.warning(f"⚠️ Model {model} failed: {e}")
+    return "Все бесплатные модели Hugging Face сейчас недоступны. Попробуй чуть позже."
 
 # -------------------- Telegram --------------------
 @dp.message(CommandStart())
 async def start(message: types.Message):
     user_chats[message.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
-    await message.answer("👋 Привет! Я бесплатный ChatGPT-бот на Hugging Face.", reply_markup=control_kb())
+    await message.answer(
+        "👋 Привет! Я бесплатный ChatGPT-бот через Hugging Face Hub.\n"
+        "Можешь спрашивать что угодно — я попробую помочь!",
+        reply_markup=control_kb()
+    )
 
 @dp.callback_query()
 async def callbacks(callback: types.CallbackQuery):
@@ -181,16 +189,15 @@ async def chat(message: types.Message):
     chat_name = get_active_chat(uid)
     history = get_or_create_chat(uid, chat_name)
     history.append(f"Пользователь: {text}")
-    short_history = list(history)[-20:]
-    prompt = "\n".join(short_history)
+    prompt = "\n".join(history)[-4000:]
     await message.chat.do("typing")
-    reply = await hf_pick_and_answer(prompt)
+    reply = await asyncio.to_thread(hf_chat, prompt)
     history.append(f"ИИ: {reply}")
     await message.answer(reply, reply_markup=control_kb())
 
 # -------------------- Runner --------------------
 async def main():
-    log.info("🚀 Free ChatGPT-like Bot running via HF v1 API")
+    log.info("🚀 Free ChatGPT-like Bot started via Hugging Face Hub InferenceClient")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
