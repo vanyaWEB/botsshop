@@ -1,13 +1,13 @@
 """
-🔥 Ultimate Hermes AI Chat Bot (Router v2)
------------------------------------------
-• Модель: NousResearch/Hermes-2-Pro-Mistral-7B
-• Fallback: tiiuae/falcon-7b-instruct
-• Работает бесплатно через Hugging Face Router v2
-• Мультичаты, очистка, история, rate-limit
+🚀 Ultimate AI Bot — OpenRouter Edition
+---------------------------------------
+• Работает через OpenRouter.ai (бесплатно)
+• Совместим с OpenAI API
+• Мультичаты, очистка, память
+• Минимальная нагрузка на RAM
 """
 
-import os, time, asyncio, httpx, logging
+import os, time, asyncio, logging, httpx
 from collections import defaultdict, deque
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -17,27 +17,17 @@ from dotenv import load_dotenv
 # -------------------- SETUP --------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("HermesChatBot")
+log = logging.getLogger("OpenRouterBot")
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
-HF_API_KEY = os.getenv("HF_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
 if not TG_BOT_TOKEN:
-    raise SystemExit("❌ TG_BOT_TOKEN отсутствует в .env")
+    raise SystemExit("❌ Нет TG_BOT_TOKEN в .env")
 
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
-
-# -------------------- HUGGING FACE --------------------
-HF_URL = "https://router.huggingface.co/hf-inference/v1/chat/completions"
-PRIMARY_MODEL = "NousResearch/Hermes-2-Pro-Mistral-7B"
-FALLBACK_MODEL = "tiiuae/falcon-7b-instruct"
-HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
-
-SYSTEM_PROMPT = (
-    "Ты — умный, уверенный, позитивный ассистент. "
-    "Отвечай по делу, вежливо и с лёгким дружелюбным тоном. "
-    "Если вопрос непонятен — уточни. Не извиняйся без причины."
-)
 
 # -------------------- MEMORY --------------------
 MAX_TURNS = 20
@@ -89,39 +79,38 @@ def allow_request(uid: int) -> tuple[bool, str | None]:
     _last_user[uid] = now
     return True, None
 
-# -------------------- HF CHAT --------------------
-async def hf_chat(prompt: str) -> str:
+# -------------------- CHAT COMPLETION --------------------
+async def ai_reply(prompt: str) -> str:
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "mistralai/mixtral-8x7b-instruct",  # бесплатная мощная модель
+        "messages": [
+            {"role": "system", "content": "Ты — умный и дружелюбный ассистент. Отвечай ясно и интересно."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 400,
+        "temperature": 0.7,
+    }
+
     async with httpx.AsyncClient(timeout=90) as client:
-        for model in [PRIMARY_MODEL, FALLBACK_MODEL]:
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": 400,
-                "temperature": 0.7,
-            }
-            try:
-                r = await client.post(HF_URL, headers=HEADERS, json=payload)
-                if r.status_code == 200:
-                    data = r.json()
-                    text = data["choices"][0]["message"]["content"].strip()
-                    log.info(f"✅ Модель: {model}")
-                    return text
-                else:
-                    log.warning(f"⚠️ {model}: {r.status_code} {r.text[:120]}")
-            except Exception as e:
-                log.warning(f"❌ Ошибка {model}: {e}")
-    return "😔 Все модели временно недоступны. Попробуй чуть позже."
+        r = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+        if r.status_code == 200:
+            data = r.json()
+            return data["choices"][0]["message"]["content"].strip()
+        else:
+            log.warning(f"⚠️ OpenRouter error {r.status_code}: {r.text[:100]}")
+            return "😔 Нейросеть сейчас недоступна. Попробуй позже."
 
 # -------------------- TELEGRAM --------------------
 @dp.message(CommandStart())
 async def start(msg: types.Message):
     user_chats[msg.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
     await msg.answer(
-        "👋 Привет! Я бот на базе **Hermes-2-Pro-Mistral-7B** 🧠\n"
-        "Создавай новые чаты, очищай историю и общайся как с ChatGPT!",
+        "👋 Привет! Я AI-бот на базе **Mixtral 8x7B** (через OpenRouter.ai)\n"
+        "Создавай чаты, очищай историю и задавай любые вопросы!",
         reply_markup=kb_controls(),
     )
 
@@ -169,13 +158,13 @@ async def chat(msg: types.Message):
     prompt = "\n".join(hist)[-4000:]
 
     await msg.chat.do("typing")
-    reply = await hf_chat(prompt)
+    reply = await ai_reply(prompt)
     hist.append(f"ИИ: {reply}")
     await msg.answer(reply, reply_markup=kb_controls())
 
 # -------------------- RUN --------------------
 async def main():
-    log.info("🚀 Hermes Chat Bot запущен (Router v2)")
+    log.info("🚀 Ultimate OpenRouter Bot запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
