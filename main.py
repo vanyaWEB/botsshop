@@ -266,25 +266,3 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-# ============================= requirements.txt =============================
-aiogram==3.4.1
-httpx==0.27.2
-python-dotenv==1.0.1
-uvloop==0.19.0
-loguru==0.7.2
-
-# ============================= Dockerfile =============================
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-ENV PYTHONUNBUFFERED=1
-CMD ["python", "bot.py"]
-
-# ============================= .env.example =============================
-# Telegram
-TG_BOT_TOKEN=123456:ABC...
-
-# Hugging Face — необязателен. Если пусто, запросы пойдут без токена
-HF_API_KEY=
