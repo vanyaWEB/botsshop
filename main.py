@@ -1,26 +1,16 @@
 """
-Ultimate Free ChatGPT-like Bot (Telegram, HF-only, No OpenAI)
--------------------------------------------------------------
-• Полностью бесплатный режим: только open-source модели через Hugging Face Router
-• Ключ HF не обязателен (если есть — укажи; если нет — запросы без авторизации)
-• Мультичаты (создание/выбор/очистка), память контекста
-• Rate limit (пер-пользователь + глобальный), бэкофф и ретраи
-• Чистый Docker-образ, минимальные зависимости
-
-Файлы:
-- bot.py (основное приложение)
-- requirements.txt
-- Dockerfile
-- .env.example
+✅ Free ChatGPT-like Bot — Hugging Face Official Inference API (v1)
+------------------------------------------------------------------
+• Работает без OpenAI, бесплатно через router.huggingface.co/v1
+• Поддерживает: mistralai/Mistral-7B-Instruct, HuggingFaceH4/zephyr-7b-beta, meta-llama/Llama-3-8b-chat-hf
+• Мультичаты, очистка, rate-limit, кэширование модели.
 """
 
-# ============================= bot.py =============================
 import os
 import time
 import asyncio
 import logging
 from collections import defaultdict, deque
-
 import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
@@ -41,186 +31,137 @@ if not TG_BOT_TOKEN:
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------------- Models (HF Router) --------------------
-HF_BASE_URL = "https://router.huggingface.co/hf-inference/models"
-# Порядок: пробуем по очереди до успешного ответа
+# -------------------- HF Router Config --------------------
+HF_BASE_URL = "https://router.huggingface.co/v1/chat/completions"
 HF_MODEL_CANDIDATES = [
-    "HuggingFaceH4/zephyr-7b-beta",
     "mistralai/Mistral-7B-Instruct-v0.2",
-    "tiiuae/falcon-7b-instruct",
+    "HuggingFaceH4/zephyr-7b-beta",
+    "meta-llama/Llama-3-8b-chat-hf",
 ]
 
 SYSTEM_PROMPT = (
-    "Ты — доброжелательный ассистент в стиле ChatGPT. Отвечай чётко и по делу,"
-    " можно с короткими примерами. Если чего-то не знаешь — скажи об этом."
+    "Ты — дружелюбный AI-ассистент в стиле ChatGPT. "
+    "Отвечай чётко, по делу, без воды. Если не уверен — честно скажи."
 )
 
-# -------------------- Memory (Multi-Chat) --------------------
+# -------------------- Memory --------------------
 user_chats: dict[int, dict[str, deque[str]]] = {}
-MAX_TURNS = 24
-
+MAX_TURNS = 20
 
 def get_or_create_chat(user_id: int, chat_name: str) -> deque:
     user_chats.setdefault(user_id, {})
     user_chats[user_id].setdefault(chat_name, deque(maxlen=MAX_TURNS))
     return user_chats[user_id][chat_name]
 
-
-def get_active_chat_name(user_id: int) -> str:
+def get_active_chat(user_id: int) -> str:
     chats = user_chats.get(user_id, {})
     if not chats:
         user_chats[user_id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
         return "Чат 1"
-    return chats.get("_active", sorted([k for k in chats.keys() if k != "_active"]) or ["Чат 1"])  # type: ignore
-
+    return chats.get("_active", sorted([k for k in chats.keys() if k != "_active"]) or ["Чат 1"])[0]
 
 def set_active_chat(user_id: int, chat_name: str):
     user_chats.setdefault(user_id, {})
     user_chats[user_id]["_active"] = chat_name
 
-
 def clear_chat(user_id: int, chat_name: str):
     if user_id in user_chats and chat_name in user_chats[user_id]:
         user_chats[user_id][chat_name].clear()
 
-
-def chat_menu_kb(user_id: int) -> InlineKeyboardMarkup:
+def chat_menu_kb(user_id: int):
     chats = [k for k in user_chats.get(user_id, {}).keys() if k != "_active"]
-    if not chats:
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Нет чатов", callback_data="none")]])
     buttons = [[InlineKeyboardButton(text=name, callback_data=f"select:{name}")] for name in chats]
     buttons.append([InlineKeyboardButton(text="➕ Новый чат", callback_data="new_chat")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-
-def control_kb() -> InlineKeyboardMarkup:
+def control_kb():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🧠 Очистить чат", callback_data="clear_chat")],
-            [InlineKeyboardButton(text="📋 Мои чаты", callback_data="show_chats")],
+            [InlineKeyboardButton(text="📋 Мои чаты", callback_data="show_chats")]
         ]
     )
 
-# -------------------- Rate limit --------------------
+# -------------------- Rate-limit --------------------
 USER_COOLDOWN_SEC = 2.0
-GLOBAL_MAX_PER_MIN = 12
+GLOBAL_MAX_PER_MIN = 10
 _last_user_ts: dict[int, float] = defaultdict(lambda: 0.0)
 _global_events: deque[float] = deque()
 
-
-def allow_request(user_id: int) -> tuple[bool, str | None]:
-    import time as _t
-    now = _t.time()
-    if now - _last_user_ts[user_id] < USER_COOLDOWN_SEC:
-        wait = USER_COOLDOWN_SEC - (now - _last_user_ts[user_id])
-        return False, f"Слишком часто. Подождите {wait:.0f} сек…"
+def allow_request(uid: int) -> tuple[bool, str | None]:
+    now = time.time()
+    if now - _last_user_ts[uid] < USER_COOLDOWN_SEC:
+        wait = USER_COOLDOWN_SEC - (now - _last_user_ts[uid])
+        return False, f"Слишком часто. Подожди {wait:.0f} сек."
     while _global_events and now - _global_events[0] > 60:
         _global_events.popleft()
     if len(_global_events) >= GLOBAL_MAX_PER_MIN:
-        return False, "Много запросов. Попробуйте через минуту — я уже отвечаю другим."
-    _last_user_ts[user_id] = now
+        return False, "Я сейчас отвечаю другим. Попробуй через минуту."
+    _last_user_ts[uid] = now
     _global_events.append(now)
     return True, None
 
-# -------------------- HTTP Client --------------------
-HTTP_TIMEOUT = httpx.Timeout(90.0, connect=15.0)
-client = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
+# -------------------- Inference --------------------
+_cached_model = {"name": None, "ts": 0.0}
+CACHE_TTL = 600.0
 
-# -------------------- HF Calls --------------------
-_cached = {"name": None, "ts": 0.0}
-CACHE_TTL = 300.0
-
-
-def _headers():
-    h = {"Content-Type": "application/json", "x-wait-for-model": "true"}
+async def hf_chat(model: str, messages: list[dict]) -> str | None:
+    headers = {"Content-Type": "application/json"}
     if HF_API_KEY:
-        h["Authorization"] = f"Bearer {HF_API_KEY}"
-    return h
-
-
-async def hf_try_model(model: str, prompt: str) -> str | None:
-    url = f"{HF_BASE_URL}/{model}"
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 400, "temperature": 0.6}}
-    r = await client.post(url, headers=_headers(), json=payload)
-    if r.status_code != 200:
-        log.warning("HF %s -> %s %s", model, r.status_code, r.text[:160])
+        headers["Authorization"] = f"Bearer {HF_API_KEY}"
+    payload = {"model": model, "messages": messages, "max_tokens": 400, "temperature": 0.7}
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(HF_BASE_URL, headers=headers, json=payload)
+        if r.status_code == 200:
+            data = r.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"].strip()
+        log.warning(f"HF {model} -> {r.status_code} {r.text[:150]}")
         return None
-    data = r.json()
-    if isinstance(data, dict) and "generated_text" in data:
-        return data["generated_text"].strip()
-    if isinstance(data, list) and data and "generated_text" in data[0]:
-        return data[0]["generated_text"].strip()
-    return None
 
-
-async def hf_pick_and_answer(full_prompt: str) -> str:
-    import time as _t
-    now = _t.time()
-    if _cached["name"] and now - _cached["ts"] < CACHE_TTL:
-        txt = await hf_try_model(_cached["name"], full_prompt)  # type: ignore
+async def hf_pick_and_answer(prompt: str) -> str:
+    now = time.time()
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
+    # try cached model first
+    if _cached_model["name"] and now - _cached_model["ts"] < CACHE_TTL:
+        txt = await hf_chat(_cached_model["name"], msgs)
         if txt:
             return txt
-        _cached["name"] = None
+        _cached_model["name"] = None
+    # try all
     for m in HF_MODEL_CANDIDATES:
-        txt = await hf_try_model(m, full_prompt)
+        txt = await hf_chat(m, msgs)
         if txt:
-            _cached.update({"name": m, "ts": now})
+            _cached_model.update({"name": m, "ts": now})
             return txt
-    return "Все бесплатные модели заняты/недоступны. Попробуйте позже."
+    return "Все бесплатные модели заняты. Попробуй чуть позже."
 
-# -------------------- Telegram Commands --------------------
+# -------------------- Telegram --------------------
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def start(message: types.Message):
     user_chats[message.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
-    await message.answer(
-        "👋 Привет! Я бесплатный ChatGPT‑like бот на open‑source моделях.\n"
-        "Создавай несколько чатов, очищай контекст и спрашивай что угодно!",
-        reply_markup=control_kb(),
-    )
-
-@dp.message(Command("menu"))
-async def cmd_menu(message: types.Message):
-    await message.answer("📋 Выберите чат:", reply_markup=chat_menu_kb(message.from_user.id))
-
-@dp.message(Command("reset"))
-async def cmd_reset(message: types.Message):
-    uid = message.from_user.id
-    chat_name = get_active_chat_name(uid)
-    clear_chat(uid, chat_name)
-    await message.answer(f"История {chat_name} очищена 🧠", reply_markup=control_kb())
-
-@dp.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.answer(
-        "Команды:\n"
-        "/menu — список чатов\n/reset — очистить текущий\n/help — помощь\n\n"
-        "Совет: если ответ не пришёл — подождите пару секунд и спросите снова."
-    )
+    await message.answer("👋 Привет! Я бесплатный ChatGPT-бот на Hugging Face.", reply_markup=control_kb())
 
 @dp.callback_query()
 async def callbacks(callback: types.CallbackQuery):
     uid = callback.from_user.id
     data = callback.data
-
     if data == "clear_chat":
-        chat_name = get_active_chat_name(uid)
+        chat_name = get_active_chat(uid)
         clear_chat(uid, chat_name)
         await callback.message.answer(f"{chat_name} очищен ✅", reply_markup=control_kb())
         return await callback.answer()
-
     if data == "new_chat":
         current = user_chats.get(uid, {})
-        new_index = len([k for k in current.keys() if k != "_active"]) + 1
-        chat_name = f"Чат {new_index}"
+        idx = len([k for k in current.keys() if k != "_active"]) + 1
+        chat_name = f"Чат {idx}"
         user_chats.setdefault(uid, {})[chat_name] = deque(maxlen=MAX_TURNS)
         set_active_chat(uid, chat_name)
-        await callback.message.answer(f"Создан {chat_name}. Начните разговор 💬", reply_markup=control_kb())
+        await callback.message.answer(f"Создан {chat_name}. Начни разговор 💬", reply_markup=control_kb())
         return await callback.answer()
-
     if data == "show_chats":
-        await callback.message.answer("📋 Ваши чаты:", reply_markup=chat_menu_kb(uid))
+        await callback.message.answer("📋 Твои чаты:", reply_markup=chat_menu_kb(uid))
         return await callback.answer()
-
     if data.startswith("select:"):
         chat_name = data.split(":", 1)[1]
         if uid in user_chats and chat_name in user_chats[uid]:
@@ -230,39 +171,27 @@ async def callbacks(callback: types.CallbackQuery):
             await callback.message.answer("❌ Чат не найден.")
         return await callback.answer()
 
-# -------------------- Chat Logic --------------------
 @dp.message()
 async def chat(message: types.Message):
     uid = message.from_user.id
-    text = (message.text or "").strip()
-
+    text = message.text.strip()
     ok, warn = allow_request(uid)
     if not ok:
         return await message.answer(warn, reply_markup=control_kb())
-
-    active = get_active_chat_name(uid)
-    history = get_or_create_chat(uid, active)
+    chat_name = get_active_chat(uid)
+    history = get_or_create_chat(uid, chat_name)
     history.append(f"Пользователь: {text}")
     short_history = list(history)[-20:]
-    full_prompt = SYSTEM_PROMPT + "\n" + "\n".join(short_history) + "\nИИ:"
-
+    prompt = "\n".join(short_history)
     await message.chat.do("typing")
-    reply_text = await hf_pick_and_answer(full_prompt)
-
-    history.append(f"ИИ: {reply_text}")
-    await message.answer(reply_text, reply_markup=control_kb())
+    reply = await hf_pick_and_answer(prompt)
+    history.append(f"ИИ: {reply}")
+    await message.answer(reply, reply_markup=control_kb())
 
 # -------------------- Runner --------------------
 async def main():
-    log.info("🚀 Free ChatGPT-like Bot started (HF-only)")
+    log.info("🚀 Free ChatGPT-like Bot running via HF v1 API")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    finally:
-        try:
-            import anyio  # только для аккуратного закрытия, можно не ставить
-        except Exception:
-            pass
-
+    asyncio.run(main())
