@@ -1,7 +1,7 @@
 """
-Ultimate Pro AI Chat Bot (Multi-Chat + Fixed Hugging Face Router)
------------------------------------------------------------------
-Добавлен новый endpoint Hugging Face и восстановлено меню чатов.
+Ultimate Pro AI Chat Bot (Multi-Chat + Stable Model Fallback)
+-------------------------------------------------------------
+Исправлено подключение к модели Hugging Face Router. Добавлено автоопределение рабочей модели.
 """
 
 import os
@@ -27,8 +27,12 @@ if not TG_BOT_TOKEN:
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------------- Hugging Face Router --------------------
-MODEL_URL = "https://router.huggingface.co/hf-inference/models/microsoft/Phi-3-mini-4k-instruct"
+# -------------------- Hugging Face Models --------------------
+# Если Phi-3 недоступна, бот автоматически переключится на Mixtral
+PRIMARY_MODEL = "microsoft/Phi-3-mini-4k-instruct"
+FALLBACK_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+HF_BASE_URL = "https://router.huggingface.co/hf-inference/models"
+
 SYSTEM_PROMPT = (
     """
 Ты — профессиональный и дружелюбный ассистент. Общайся естественно, кратко и по существу.
@@ -36,36 +40,39 @@ SYSTEM_PROMPT = (
 """
 ).strip()
 
-async def hf_reply(prompt: str) -> str:
-    if not HF_API_KEY:
-        return "(Демо) Укажи HF_API_KEY, чтобы активировать нейросеть."
-
+async def query_hf_model(model: str, prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {HF_API_KEY}",
         "Content-Type": "application/json",
         "x-wait-for-model": "true"
     }
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 400, "temperature": 0.6}
-    }
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 400, "temperature": 0.6}}
 
-    try:
-        async with httpx.AsyncClient(timeout=90) as client:
-            r = await client.post(MODEL_URL, headers=headers, json=payload)
-            if r.status_code != 200:
-                log.error("HF API error %s %s", r.status_code, r.text)
-                return f"Ошибка модели ({r.status_code}). Попробуйте позже."
+    async with httpx.AsyncClient(timeout=90) as client:
+        url = f"{HF_BASE_URL}/{model}"
+        r = await client.post(url, headers=headers, json=payload)
+        if r.status_code == 200:
             data = r.json()
             if isinstance(data, dict) and "generated_text" in data:
                 return data["generated_text"].strip()
             elif isinstance(data, list) and data and "generated_text" in data[0]:
                 return data[0]["generated_text"].strip()
-            else:
-                return "Ответ модели пуст. Попробуйте позже."
-    except Exception as e:
-        log.exception("HF API exception: %s", e)
-        return "Произошла ошибка при подключении к нейросети."
+        log.error("HF API error %s %s", r.status_code, r.text)
+        raise Exception(f"HF API error {r.status_code}")
+
+async def hf_reply(prompt: str) -> str:
+    if not HF_API_KEY:
+        return "(Демо) Укажи HF_API_KEY, чтобы активировать нейросеть."
+
+    try:
+        return await query_hf_model(PRIMARY_MODEL, prompt)
+    except Exception:
+        log.warning("⚠️ Основная модель недоступна, переключение на Mixtral...")
+        try:
+            return await query_hf_model(FALLBACK_MODEL, prompt)
+        except Exception as e:
+            log.error("Обе модели недоступны: %s", e)
+            return "Все нейросети временно недоступны. Попробуйте позже."
 
 # -------------------- Multi-Chat Memory --------------------
 user_chats = {}
@@ -100,7 +107,7 @@ def control_kb():
 async def cmd_start(message: types.Message):
     user_chats[message.from_user.id] = {"Чат 1": []}
     await message.answer(
-        "👋 Привет! Я обновлённый AI-бот с меню чатов и новой Hugging Face API!",
+        "👋 Привет! Я обновлённый AI-бот с fallback на Mixtral, если Phi-3 недоступна!",
         reply_markup=control_kb()
     )
 
@@ -165,7 +172,7 @@ async def chat(message: types.Message):
 
 # -------------------- Runner --------------------
 async def main():
-    log.info("🚀 Ultimate Pro AI Chat Bot with Multi-Chat restored!")
+    log.info("🚀 Ultimate Pro AI Chat Bot (Phi-3 + Mixtral fallback) started!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
