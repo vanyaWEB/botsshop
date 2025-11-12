@@ -1,9 +1,10 @@
 """
-🔥 Ultimate AI Chat Bot (Mistral + Multi-Chat + Stable Router API)
------------------------------------------------------------------
-• Использует Hugging Face Router v2 — полностью бесплатно
-• Модель: mistralai/Mistral-7B-Instruct-v0.3 (open-source)
-• Мультичаты, история, очистка, rate-limit
+🔥 Ultimate Hermes AI Chat Bot (Router v2)
+-----------------------------------------
+• Модель: NousResearch/Hermes-2-Pro-Mistral-7B
+• Fallback: tiiuae/falcon-7b-instruct
+• Работает бесплатно через Hugging Face Router v2
+• Мультичаты, очистка, история, rate-limit
 """
 
 import os, time, asyncio, httpx, logging
@@ -16,28 +17,26 @@ from dotenv import load_dotenv
 # -------------------- SETUP --------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("UltimateMistralBot")
+log = logging.getLogger("HermesChatBot")
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")
 if not TG_BOT_TOKEN:
-    raise SystemExit("❌ TG_BOT_TOKEN не найден в .env")
+    raise SystemExit("❌ TG_BOT_TOKEN отсутствует в .env")
 
 bot = Bot(token=TG_BOT_TOKEN)
 dp = Dispatcher()
 
 # -------------------- HUGGING FACE --------------------
 HF_URL = "https://router.huggingface.co/hf-inference/v1/chat/completions"
-MODELS = [
-    "mistralai/Mistral-7B-Instruct-v0.3",
-    "HuggingFaceH4/zephyr-7b-beta",
-]
+PRIMARY_MODEL = "NousResearch/Hermes-2-Pro-Mistral-7B"
+FALLBACK_MODEL = "tiiuae/falcon-7b-instruct"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
 
 SYSTEM_PROMPT = (
-    "Ты — дружелюбный, профессиональный ассистент. "
-    "Общайся вежливо, по делу и помогай максимально эффективно. "
-    "Если вопрос неясен — уточни, но не извиняйся слишком часто."
+    "Ты — умный, уверенный, позитивный ассистент. "
+    "Отвечай по делу, вежливо и с лёгким дружелюбным тоном. "
+    "Если вопрос непонятен — уточни. Не извиняйся без причины."
 )
 
 # -------------------- MEMORY --------------------
@@ -90,11 +89,10 @@ def allow_request(uid: int) -> tuple[bool, str | None]:
     _last_user[uid] = now
     return True, None
 
-# -------------------- HUGGING FACE CHAT --------------------
+# -------------------- HF CHAT --------------------
 async def hf_chat(prompt: str) -> str:
-    """Отправляет запрос в Hugging Face Router."""
     async with httpx.AsyncClient(timeout=90) as client:
-        for model in MODELS:
+        for model in [PRIMARY_MODEL, FALLBACK_MODEL]:
             payload = {
                 "model": model,
                 "messages": [
@@ -108,22 +106,22 @@ async def hf_chat(prompt: str) -> str:
                 r = await client.post(HF_URL, headers=HEADERS, json=payload)
                 if r.status_code == 200:
                     data = r.json()
-                    txt = data["choices"][0]["message"]["content"].strip()
+                    text = data["choices"][0]["message"]["content"].strip()
                     log.info(f"✅ Модель: {model}")
-                    return txt
+                    return text
                 else:
-                    log.warning(f"⚠️ {model}: {r.status_code} {r.text[:100]}")
+                    log.warning(f"⚠️ {model}: {r.status_code} {r.text[:120]}")
             except Exception as e:
                 log.warning(f"❌ Ошибка {model}: {e}")
-    return "😔 Все модели временно недоступны, попробуй позже."
+    return "😔 Все модели временно недоступны. Попробуй чуть позже."
 
-# -------------------- TELEGRAM HANDLERS --------------------
+# -------------------- TELEGRAM --------------------
 @dp.message(CommandStart())
 async def start(msg: types.Message):
     user_chats[msg.from_user.id] = {"Чат 1": deque(maxlen=MAX_TURNS)}
     await msg.answer(
-        "👋 Привет! Я твой AI-помощник на базе **Mistral 7B**.\n"
-        "Создавай новые чаты, очищай историю и общайся как с ChatGPT 💬",
+        "👋 Привет! Я бот на базе **Hermes-2-Pro-Mistral-7B** 🧠\n"
+        "Создавай новые чаты, очищай историю и общайся как с ChatGPT!",
         reply_markup=kb_controls(),
     )
 
@@ -142,7 +140,7 @@ async def callbacks(cb: types.CallbackQuery):
         name = f"Чат {index}"
         user_chats[uid][name] = deque(maxlen=MAX_TURNS)
         set_active_chat(uid, name)
-        await cb.message.answer(f"Создан {name}. Начинай общение 💬", reply_markup=kb_controls())
+        await cb.message.answer(f"Создан {name} 💬", reply_markup=kb_controls())
         return await cb.answer()
 
     if data == "show_chats":
@@ -177,7 +175,7 @@ async def chat(msg: types.Message):
 
 # -------------------- RUN --------------------
 async def main():
-    log.info("🚀 Ultimate Mistral Chat Bot запущен (Router v2)")
+    log.info("🚀 Hermes Chat Bot запущен (Router v2)")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
